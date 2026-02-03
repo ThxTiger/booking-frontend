@@ -7,38 +7,39 @@ body {
 .timeline-container { 
     overflow-x: auto; /* Scroll horizontally on small screens */
     background: #ffffff;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
     position: relative;
-    padding-bottom: 10px;
+    min-height: 140px; /* Force height even if empty */
 }
 
-/* Header: The Hour Labels (15:00, 16:00...) */
+/* Header: The Hour Labels (08:00, 09:00...) */
 .timeline-header {
     display: flex;
-    border-bottom: 2px solid #e9ecef;
+    border-bottom: 1px solid #dee2e6;
     background-color: #f8f9fa;
     height: 40px;
 }
 
 .timeline-hour-label {
-    flex: 0 0 12.5%; /* 100% / 8 hours = 12.5% per hour */
+    flex: 0 0 8.3333%; /* 100% / 12 hours = 8.33% per hour */
     text-align: left;
     padding-left: 5px;
     font-weight: 600;
-    color: #495057;
-    font-size: 13px;
+    color: #6c757d;
+    font-size: 12px;
     line-height: 40px; /* Vertically center */
-    border-right: 1px dashed #dee2e6;
+    border-right: 1px dashed #e9ecef;
     box-sizing: border-box;
+    white-space: nowrap;
+    overflow: hidden;
 }
 
 /* The Track: Where events live */
 .timeline-track {
     position: relative;
-    height: 80px;
-    background-image: linear-gradient(to right, transparent 49.8%, #f1f3f5 50%, transparent 50.2%);
-    background-size: 6.25% 100%; /* Creates a faint 30-min line */
+    height: 100px;
+    /* This creates a faint vertical line every 30 minutes */
+    background-image: linear-gradient(to right, transparent 49.8%, #f8f9fa 50%, transparent 50.2%);
+    background-size: 4.1666% 100%; /* Half of 8.33% */
 }
 
 /* Vertical Grid Lines (Matches Header) */
@@ -46,7 +47,7 @@ body {
     position: absolute;
     top: 0; bottom: 0;
     width: 1px;
-    background-color: #e9ecef;
+    background-color: #dee2e6;
     z-index: 1;
 }
 
@@ -55,48 +56,54 @@ body {
     position: absolute;
     top: 0; bottom: 0;
     width: 2px;
-    background-color: #0d6efd;
+    background-color: #dc3545; /* Red Line */
     z-index: 20;
     pointer-events: none;
 }
 .current-time-label {
     position: absolute;
-    top: -25px;
-    left: -18px;
-    background: #0d6efd;
+    top: -24px;
+    left: -16px;
+    background: #dc3545;
     color: white;
     font-size: 10px;
+    font-weight: bold;
     padding: 2px 6px;
-    border-radius: 4px;
+    border-radius: 3px;
+    white-space: nowrap;
 }
 
 /* Event Blocks (The Meetings) */
 .event-block { 
     position: absolute; 
-    top: 20px; 
-    bottom: 20px; 
-    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
-    border-radius: 6px; 
+    top: 25px; 
+    bottom: 25px; 
+    background: #0d6efd; /* Blue events */
+    border-left: 4px solid #0a58ca;
+    border-radius: 4px; 
     z-index: 10; 
     color: white;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     display: flex;
-    align-items: center;
+    flex-direction: column;
     justify-content: center;
+    padding: 0 8px;
     overflow: hidden;
-    box-shadow: 0 4px 6px rgba(220, 53, 69, 0.3);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     transition: transform 0.2s, box-shadow 0.2s;
-    white-space: nowrap;
-    padding: 0 5px;
     cursor: pointer;
+    white-space: nowrap;
 }
 
 .event-block:hover { 
     transform: translateY(-2px);
-    box-shadow: 0 6px 8px rgba(220, 53, 69, 0.4);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.2);
     z-index: 15;
 }
 
+.event-title { font-weight: bold; }
+.event-time { font-size: 10px; opacity: 0.9; }
+
 /* Loading State */
-.loading { display: none; font-size: 14px; font-weight: 500; }
+.loading { display: none; }
