@@ -5,31 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Room Booking PoC</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
     <script type="text/javascript" src="https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.min.js"></script>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <h2 class="fw-bold text-dark">🏢 Axians Room Booker</h2>
-        <button class="btn btn-outline-primary btn-sm" onclick="window.location.reload()">🔄 Refresh</button>
+        
+        <div class="d-flex align-items-center gap-3">
+            <span id="userWelcome" class="text-secondary small fw-bold" style="display:none;"></span>
+            <button id="loginBtn" class="btn btn-dark btn-sm" onclick="signIn()">🔒 Sign In</button>
+            <button id="logoutBtn" class="btn btn-outline-danger btn-sm" onclick="signOut()" style="display:none;">Sign Out</button>
+        </div>
     </div>
 
     <div class="card mb-4 shadow-sm border-0">
         <div class="card-body bg-white rounded">
-            <div class="row g-3">
-                <div class="col-md-6">
-                    <label class="form-label fw-bold text-secondary small">SELECT ROOM</label>
-                    <select id="roomSelect" class="form-select" onchange="loadAvailability()">
-                        <option value="" disabled selected>Loading rooms...</option>
-                    </select>
-                </div>
-                <div class="col-md-6">
-                    <label class="form-label fw-bold text-secondary small">ORGANIZER EMAIL</label>
-                    <input type="email" id="organizerEmail" class="form-control" placeholder="name@axians.com">
-                </div>
-            </div>
+            <label class="form-label fw-bold text-secondary small">SELECT ROOM</label>
+            <select id="roomSelect" class="form-select" onchange="loadAvailability()">
+                <option value="" disabled selected>Loading rooms...</option>
+            </select>
         </div>
     </div>
 
@@ -46,7 +43,7 @@
         </div>
         
         <div class="card-footer bg-white text-end py-3">
-             <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bookingModal">➕ New Booking</button>
+             <button class="btn btn-primary" onclick="handleBookClick()">➕ New Booking</button>
         </div>
     </div>
 </div>
@@ -55,14 +52,18 @@
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Book a Room</h5>
+                <h5 class="modal-title">Confirm Booking</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <form id="bookingForm">
                     <div class="mb-3">
                         <label class="form-label">Meeting Subject</label>
-                        <input type="text" id="subject" class="form-control" value="Sync Meeting" required>
+                        <input type="text" id="subject" class="form-control" value="Team Sync" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Organizer (You)</label>
+                        <input type="text" id="displayEmail" class="form-control bg-light" readonly>
                     </div>
                     <div class="row">
                         <div class="col-6 mb-3">
