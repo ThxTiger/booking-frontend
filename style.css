@@ -1,57 +1,102 @@
 body { 
-    background-color: #f0f2f5; 
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f4f6f9; 
+    font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
 }
 
 /* Timeline Container */
 .timeline-container { 
-    overflow-x: auto; 
-    white-space: nowrap; 
-    padding: 20px 0; 
-    min-height: 120px;
+    overflow-x: auto; /* Scroll horizontally on small screens */
     background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    position: relative;
+    padding-bottom: 10px;
+}
+
+/* Header: The Hour Labels (15:00, 16:00...) */
+.timeline-header {
+    display: flex;
+    border-bottom: 2px solid #e9ecef;
+    background-color: #f8f9fa;
+    height: 40px;
+}
+
+.timeline-hour-label {
+    flex: 0 0 12.5%; /* 100% / 8 hours = 12.5% per hour */
+    text-align: left;
+    padding-left: 5px;
+    font-weight: 600;
+    color: #495057;
+    font-size: 13px;
+    line-height: 40px; /* Vertically center */
+    border-right: 1px dashed #dee2e6;
+    box-sizing: border-box;
+}
+
+/* The Track: Where events live */
+.timeline-track {
+    position: relative;
+    height: 80px;
+    background-image: linear-gradient(to right, transparent 49.8%, #f1f3f5 50%, transparent 50.2%);
+    background-size: 6.25% 100%; /* Creates a faint 30-min line */
+}
+
+/* Vertical Grid Lines (Matches Header) */
+.grid-line {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 1px;
+    background-color: #e9ecef;
+    z-index: 1;
+}
+
+/* The "Now" Indicator Line */
+.current-time-line {
+    position: absolute;
+    top: 0; bottom: 0;
+    width: 2px;
+    background-color: #0d6efd;
+    z-index: 20;
+    pointer-events: none;
+}
+.current-time-label {
+    position: absolute;
+    top: -25px;
+    left: -18px;
+    background: #0d6efd;
+    color: white;
+    font-size: 10px;
+    padding: 2px 6px;
     border-radius: 4px;
 }
 
-/* The Grid (Hours) */
-.timeline-wrapper {
-    display: flex; 
-    position: relative; 
-    height: 80px; 
-    width: 100%; 
-    border: 1px solid #dee2e6; 
-    background: #f8f9fa;
-}
-
-.hour-slot {
-    flex: 1; 
-    border-right: 1px solid #dee2e6; 
-    padding: 5px; 
-    font-size: 12px; 
-    color: #6c757d;
-}
-
-/* The Red Busy Blocks */
+/* Event Blocks (The Meetings) */
 .event-block { 
     position: absolute; 
-    top: 25px; 
-    bottom: 10px; 
-    background-color: #dc3545; 
-    border-radius: 4px; 
+    top: 20px; 
+    bottom: 20px; 
+    background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);
+    border-radius: 6px; 
     z-index: 10; 
     color: white;
-    font-size: 11px;
+    font-size: 12px;
+    font-weight: 500;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-    transition: opacity 0.2s;
+    box-shadow: 0 4px 6px rgba(220, 53, 69, 0.3);
+    transition: transform 0.2s, box-shadow 0.2s;
+    white-space: nowrap;
+    padding: 0 5px;
+    cursor: pointer;
 }
 
 .event-block:hover { 
-    opacity: 0.9; 
-    cursor: pointer; 
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(220, 53, 69, 0.4);
+    z-index: 15;
 }
 
-.loading { display: none; }
+/* Loading State */
+.loading { display: none; font-size: 14px; font-weight: 500; }
