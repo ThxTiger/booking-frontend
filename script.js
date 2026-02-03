@@ -8,8 +8,8 @@ const API_URL = "https://booking-a-room-poc.onrender.com";
 // 🔴 FRONTEND: Your Azure AD "Frontend" App Registration
 const msalConfig = {
     auth: {
-        clientId: "PASTE_YOUR_FRONTEND_CLIENT_ID_HERE", // e.g. "a1b2c3d4-..."
-        authority: "https://login.microsoftonline.com/PASTE_YOUR_TENANT_ID_HERE",
+        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8",
+        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6",
         redirectUri: window.location.origin, // Auto-detects localhost or vercel
     },
     cache: {
