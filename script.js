@@ -1,14 +1,14 @@
 // 🔴 REPLACE THIS WITH YOUR RENDER URL
 const API_URL = "https://booking-a-room-poc.onrender.com"; 
 
-// --- Configuration ---
-const HOURS_TO_SHOW = 12; // Use 12 hours instead of 8
+const HOURS_TO_SHOW = 12; // Total span to display
 
 document.addEventListener("DOMContentLoaded", () => {
     initModalTimes();
     fetchRooms();
 });
 
+// Initialize Date/Time inputs in the Modal
 function initModalTimes() {
     const now = new Date();
     now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -18,7 +18,7 @@ function initModalTimes() {
     document.getElementById('endTime').value = now.toISOString().slice(0,16);
 }
 
-// --- 1. Fetch Rooms ---
+// 1. Fetch Rooms List
 async function fetchRooms() {
     try {
         const res = await fetch(`${API_URL}/rooms`);
@@ -40,14 +40,14 @@ async function fetchRooms() {
     }
 }
 
-// --- 2. Load Availability ---
+// 2. Load Availability (Visual Timeline)
 async function loadAvailability() {
     const roomEmail = document.getElementById('roomSelect').value;
     if (!roomEmail) return;
 
     document.getElementById('loadingSpinner').style.display = "inline";
     
-    // Calculate View Range: Snap to the PREVIOUS hour (e.g., 15:23 -> 15:00)
+    // Calculate View Range: Snap to the PREVIOUS hour
     const now = new Date();
     const viewStart = new Date(now);
     viewStart.setMinutes(0, 0, 0); 
@@ -75,74 +75,74 @@ async function loadAvailability() {
     }
 }
 
-// --- 3. Render Professional Gantt Timeline ---
+// 3. Render Timeline (Green Grid + Red Events)
 function renderTimeline(data, viewStart, viewEnd) {
     const timelineContainer = document.getElementById('timeline');
     timelineContainer.innerHTML = ''; 
 
     const totalDurationMs = viewEnd - viewStart;
+    
+    // We want 30-minute slots instead of 1-hour
+    // 12 hours * 2 slots/hour = 24 slots
+    const totalSlots = HOURS_TO_SHOW * 2; 
+    const slotWidthPct = 100 / totalSlots;
 
-    // A. Header Row (e.g. 08:00, 09:00)
+    // A. Header Row (15:00, 15:30...)
     let headerHtml = `<div class="timeline-header">`;
-    for (let i = 0; i < HOURS_TO_SHOW; i++) {
-        let hourDate = new Date(viewStart.getTime() + i * 60 * 60 * 1000);
-        let timeLabel = hourDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        headerHtml += `<div class="timeline-hour-label">${timeLabel}</div>`;
+    for (let i = 0; i < totalSlots; i++) {
+        let slotTime = new Date(viewStart.getTime() + i * 30 * 60 * 1000);
+        let timeStr = slotTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+        
+        // Only show text for full hours to avoid clutter, or keep small if desired
+        // Here we show every 30 mins but you can filter with (i % 2 === 0)
+        headerHtml += `<div class="timeline-time-label" style="width:${slotWidthPct}%">${timeStr}</div>`;
     }
     headerHtml += `</div>`;
 
-    // B. Track Row (Grid + Events)
+    // B. Track Row (Green Bg + Red Events)
     let trackHtml = `<div class="timeline-track">`;
     
-    // Draw Vertical Grid Lines
-    for (let i = 1; i < HOURS_TO_SHOW; i++) {
-        let leftPct = (i / HOURS_TO_SHOW) * 100;
-        trackHtml += `<div class="grid-line" style="left: ${leftPct}%"></div>`;
+    // Draw Vertical Grid Lines (every 30 mins)
+    for (let i = 1; i < totalSlots; i++) {
+        trackHtml += `<div class="grid-line" style="left: ${i * slotWidthPct}%"></div>`;
     }
 
-    // Draw "NOW" Indicator
+    // Draw "NOW" Indicator Line
     const now = new Date();
     if (now >= viewStart && now <= viewEnd) {
-        const nowOffset = now - viewStart;
-        const nowPct = (nowOffset / totalDurationMs) * 100;
+        const nowPct = ((now - viewStart) / totalDurationMs) * 100;
         trackHtml += `
             <div class="current-time-line" style="left: ${nowPct}%">
                 <div class="current-time-label">NOW</div>
             </div>`;
     }
 
-    // Draw Events
+    // Draw Occupied Events (Red Blocks)
     const schedule = (data.value && data.value[0]) ? data.value[0] : null; 
     
     if (schedule && schedule.scheduleItems) {
         schedule.scheduleItems.forEach(item => {
             if (item.status === 'busy') {
-                const eventStart = new Date(item.start.dateTime + 'Z'); 
-                const eventEnd = new Date(item.end.dateTime + 'Z');
-
-                // Math
-                const offsetMs = eventStart - viewStart;
-                const durationMs = eventEnd - eventStart;
+                const start = new Date(item.start.dateTime + 'Z');
+                const end = new Date(item.end.dateTime + 'Z');
                 
-                // % Calculation
+                // Calculate Position & Width
+                const offsetMs = start - viewStart;
+                const durationMs = end - start;
+                
                 const leftPct = (offsetMs / totalDurationMs) * 100;
                 const widthPct = (durationMs / totalDurationMs) * 100;
-                
+
                 // Render if visible
                 if (leftPct < 100 && (leftPct + widthPct) > 0) {
                     const safeLeft = Math.max(0, leftPct);
                     const safeWidth = Math.min(widthPct, 100 - safeLeft);
-
-                    // Create nice label text
-                    const startStr = eventStart.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-                    const endStr = eventEnd.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-
+                    
                     trackHtml += `
                         <div class="event-block" 
                              style="left:${safeLeft}%; width:${safeWidth}%;" 
-                             title="${item.subject || 'Busy'} (${startStr} - ${endStr})">
-                             <span class="event-title">${item.subject || 'Busy'}</span>
-                             <span class="event-time">${startStr} - ${endStr}</span>
+                             title="${item.subject || 'Busy'}">
+                             <span>🚫 Occupied</span>
                         </div>`;
                 }
             }
@@ -153,7 +153,7 @@ function renderTimeline(data, viewStart, viewEnd) {
     timelineContainer.innerHTML = headerHtml + trackHtml;
 }
 
-// --- 4. Create Booking ---
+// 4. Create Booking (With Error Handling)
 async function createBooking() {
     const roomEmail = document.getElementById('roomSelect').value;
     const organizer = document.getElementById('organizerEmail').value;
@@ -161,8 +161,8 @@ async function createBooking() {
     const end = new Date(document.getElementById('endTime').value);
     const subject = document.getElementById('subject').value;
 
-    if (!roomEmail) return alert("Select a room first.");
-    if (!organizer) return alert("Enter organizer email.");
+    if (!roomEmail) return alert("Please select a room first.");
+    if (!organizer) return alert("Please enter organizer email.");
 
     try {
         const res = await fetch(`${API_URL}/book`, {
@@ -178,12 +178,19 @@ async function createBooking() {
         });
         
         if (res.ok) {
-            alert("✅ Booking Created!");
-            bootstrap.Modal.getInstance(document.getElementById('bookingModal')).hide();
-            loadAvailability(); 
+            alert("✅ Booking Successful!");
+            const modalEl = document.getElementById('bookingModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            modal.hide();
+            loadAvailability(); // Refresh timeline
         } else {
+            // Handle the conflict error
             const err = await res.json();
-            alert("❌ Failed: " + JSON.stringify(err));
+            if (res.status === 409) {
+                alert("⛔ STOP: " + err.detail); 
+            } else {
+                alert("❌ Booking Failed: " + JSON.stringify(err));
+            }
         }
     } catch (e) {
         alert("Error: " + e.message);
