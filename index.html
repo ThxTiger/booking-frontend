@@ -43,19 +43,21 @@
         <div class="col-md-8">
             
             <div id="checkInBanner" class="card text-bg-warning mb-3 shadow border-0" style="display:none;">
-                <div class="card-body d-flex justify-content-between align-items-center">
-                    <div>
-                        <h5 class="card-title fw-bold mb-0">⚠️ Check-In Required</h5>
-                        <p class="mb-0 small">
-                            <strong>Meeting:</strong> <span id="bannerSubject">...</span><br>
-                            <strong>Booker:</strong> <span id="bannerOrganizer">...</span>
-                        </p>
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h5 class="card-title fw-bold mb-1">⚠️ Check-In Required</h5>
+                            <div class="small mt-2">
+                                <div id="bannerSubject" class="fw-bold fs-5">...</div>
+                                <div class="text-muted">Booked by: <span id="bannerOrganizer">...</span></div>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-danger mb-1">DEADLINE</span>
+                            <div class="display-6 fw-bold text-danger" id="checkInTimer">--:--</div>
+                        </div>
                     </div>
-                    <div class="text-end">
-                        <small class="text-danger fw-bold d-block">DEADLINE</small>
-                        <div class="display-6 fw-bold text-danger" id="checkInTimer">--:--</div>
-                        <button id="realCheckInBtn" class="btn btn-dark fw-bold btn-sm mt-1">✅ CONFIRM PRESENCE</button>
-                    </div>
+                    <button id="realCheckInBtn" class="btn btn-dark w-100 fw-bold mt-3">✅ CONFIRM PRESENCE</button>
                 </div>
             </div>
 
@@ -79,7 +81,9 @@
         <div class="spinner-grow text-light mb-3" role="status"></div>
         <h1 class="display-1 fw-bold">⛔</h1>
         <h1 class="display-3 fw-bold">DO NOT DISTURB</h1>
-        <h2 id="overlaySubject" class="mt-4 text-warning">--</h2>
+        
+        <h2 id="overlaySubject" class="mt-4 text-warning fw-bold">--</h2>
+        <h5 id="overlayOrganizer" class="fw-light opacity-75">--</h5>
         
         <div class="my-4 p-3 bg-white bg-opacity-10 rounded-3">
             <span class="small text-uppercase fw-bold letter-spacing-1">Meeting Ends In</span>
