@@ -64,15 +64,17 @@ function handleLoginSuccess(acc) {
 // =========================================================
 
 async function createBooking() {
+    // 1. Get current form values
     const index = document.getElementById('roomSelect').value;
     if (!index) return alert("Select a room.");
-    const roomEmail = availableRooms[index].emailAddress;
-
+    
+    const room = availableRooms[index];
+    const roomEmail = room.emailAddress;
     const subject = document.getElementById('subject').value;
     const filiale = document.getElementById('filiale').value; 
     const desc = document.getElementById('description').value;
-    const start = new Date(document.getElementById('startTime').value);
-    const end = new Date(document.getElementById('endTime').value);
+    const startInput = document.getElementById('startTime').value;
+    const endInput = document.getElementById('endTime').value;
     
     const attendeesRaw = document.getElementById('attendees').value;
     let attendeeList = attendeesRaw.trim() ? attendeesRaw.split(',').map(e => e.trim()) : [];
@@ -80,8 +82,7 @@ async function createBooking() {
     if (!username) return alert("Please sign in first.");
     if (!filiale) return alert("Please enter the Filiale name.");
 
-    // 🔴 1. GET THE CURRENT USER'S TOKEN SILENTLY
-    // This token represents WHOEVER is logged in right now.
+    // 2. Get the Current User's Token
     let accessToken = "";
     try {
         const account = msalInstance.getAllAccounts()[0];
@@ -91,28 +92,23 @@ async function createBooking() {
         });
         accessToken = tokenResp.accessToken;
     } catch (e) {
-        console.warn("Silent token failed, trying popup", e);
-        try {
-            const tokenResp = await msalInstance.acquireTokenPopup(loginRequest);
-            accessToken = tokenResp.accessToken;
-        } catch (err) {
-            return alert("Permission denied. Cannot book on your behalf.");
-        }
+        console.warn("Silent token failed", e);
+        return alert("Session expired. Please sign in again.");
     }
 
-    // 🔴 2. SEND TOKEN TO BACKEND
+    // 3. Send to Backend
     try {
         const res = await fetch(`${API_URL}/book`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${accessToken}` // Attach Dynamic User Token
+                'Authorization': `Bearer ${accessToken}`
             },
             body: JSON.stringify({ 
                 subject: subject, 
                 room_email: roomEmail, 
-                start_time: start.toISOString(), 
-                end_time: end.toISOString(), 
+                start_time: new Date(startInput).toISOString(), 
+                end_time: new Date(endInput).toISOString(), 
                 organizer_email: username,
                 attendees: attendeeList,
                 filiale: filiale,       
@@ -121,14 +117,28 @@ async function createBooking() {
         });
         
         if (res.ok) {
-            alert(`✅ Booking Confirmed! You are the Organizer.`);
+            // 4. ✅ CUSTOMIZED CONFIRMATION MESSAGE
+            const startTimeFormatted = new Date(startInput).toLocaleString();
+            const endTimeFormatted = new Date(endInput).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const inviteesMsg = attendeeList.length > 0 ? attendeeList.join(", ") : "None";
+
+            alert(
+                `✅ BOOKING CONFIRMED\n\n` +
+                `📅 Time: ${startTimeFormatted} - ${endTimeFormatted}\n` +
+                `🏢 Unit: ${filiale}\n` +
+                `📝 Subject: ${subject}\n` +
+                `💡 Reason: ${desc || "N/A"}\n` +
+                `👥 Invitees: ${inviteesMsg}\n\n` +
+                `The meeting has been added to your calendar.`
+            );
+
             bootstrap.Modal.getInstance(document.getElementById('bookingModal')).hide();
             loadAvailability(roomEmail); 
         } else {
             const err = await res.json();
             alert("Error: " + (err.detail || JSON.stringify(err)));
         }
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert("Network Error: " + e.message); }
 }
 
 // =========================================================
