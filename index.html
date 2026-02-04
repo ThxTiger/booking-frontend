@@ -13,9 +13,9 @@
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
         <div class="d-flex align-items-center gap-4">
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c2/Vinci_Energies_logo.svg/320px-Vinci_Energies_logo.svg.png" alt="Vinci Energies" height="50">
+            <img src="vinci-logo.png" alt="Vinci Energies" height="50" onerror="this.style.display='none'">
             <div class="vr"></div>
-            <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/3/36/Axians_Logo.svg/320px-Axians_Logo.svg.png" alt="Axians" height="40">
+            <img src="axians-logo.png" alt="Axians" height="40" onerror="this.style.display='none'">
         </div>
         
         <div class="d-flex align-items-center gap-3">
@@ -33,14 +33,6 @@
                     <select id="roomSelect" class="form-select mb-3" onchange="handleRoomChange()">
                         <option value="" disabled selected>Loading rooms...</option>
                     </select>
-
-                    <div id="roomInfoCard" class="alert alert-light border d-none">
-                        <h6 class="text-primary fw-bold mb-1" id="infoName">Room Name</h6>
-                        <div class="d-flex justify-content-between small text-muted mt-2">
-                            <span>🏢 <span id="infoFiliale">--</span></span>
-                            <span>📍 <span id="infoFloor">--</span></span>
-                        </div>
-                    </div>
                 </div>
             </div>
             
