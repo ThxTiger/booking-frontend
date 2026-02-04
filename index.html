@@ -20,7 +20,7 @@
         
         <div class="d-flex align-items-center gap-3">
             <span id="userWelcome" class="text-secondary small fw-bold" style="display:none;"></span>
-            <button id="loginBtn" class="btn btn-dark btn-sm" onclick="signIn()">🔒 Sign In to Book</button>
+            <button id="loginBtn" class="btn btn-dark btn-sm" onclick="signIn()">🔒 Sign In</button>
             <button id="logoutBtn" class="btn btn-outline-danger btn-sm" onclick="signOut()" style="display:none;">Sign Out</button>
         </div>
     </div>
@@ -52,6 +52,7 @@
                         </p>
                     </div>
                     <div class="text-end">
+                        <small class="text-danger fw-bold d-block">DEADLINE</small>
                         <div class="display-6 fw-bold text-danger" id="checkInTimer">--:--</div>
                         <button id="realCheckInBtn" class="btn btn-dark fw-bold btn-sm mt-1">✅ CONFIRM PRESENCE</button>
                     </div>
@@ -79,10 +80,15 @@
         <h1 class="display-1 fw-bold">⛔</h1>
         <h1 class="display-3 fw-bold">DO NOT DISTURB</h1>
         <h2 id="overlaySubject" class="mt-4 text-warning">--</h2>
-        <h3 id="overlayTime" class="fw-light mb-5">--:--</h3>
         
-        <div class="d-flex flex-column align-items-center">
-             <p class="small opacity-75 mb-2">Only the organizer can unlock this screen.</p>
+        <div class="my-4 p-3 bg-white bg-opacity-10 rounded-3">
+            <span class="small text-uppercase fw-bold letter-spacing-1">Meeting Ends In</span>
+            <div id="meetingEndTimer" class="display-1 fw-bold">--:--</div>
+            <div id="overlayTime" class="h5 fw-light mt-2 opacity-75">--:--</div>
+        </div>
+
+        <div class="d-flex flex-column align-items-center mt-5">
+             <p class="small opacity-75 mb-2">Only the organizer can unlock this screen early.</p>
             <button class="btn btn-outline-light btn-lg border-2 fw-bold px-5 rounded-pill" onclick="secureExitMeetingMode()">
                 🔓 UNLOCK SCREEN
             </button>
@@ -99,13 +105,13 @@
             </div>
             <div class="modal-body">
                 <form id="bookingForm">
-                    <div class="mb-3"><label class="form-label fw-bold small">Business Unit</label><input type="text" id="filiale" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label fw-bold small">Business Unit / Filiale</label><input type="text" id="filiale" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label fw-bold small">Subject</label><input type="text" id="subject" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label fw-bold small">Reason</label><textarea id="description" class="form-control" rows="2"></textarea></div>
                     <div class="mb-3"><label class="form-label fw-bold small">Invitees</label><input type="text" id="attendees" class="form-control"></div>
                     <div class="row">
-                        <div class="col-6 mb-3"><label class="form-label fw-bold small">Start</label><input type="datetime-local" id="startTime" class="form-control" required></div>
-                        <div class="col-6 mb-3"><label class="form-label fw-bold small">End</label><input type="datetime-local" id="endTime" class="form-control" required></div>
+                        <div class="col-6 mb-3"><label class="form-label fw-bold small">Start Time</label><input type="datetime-local" id="startTime" class="form-control" required></div>
+                        <div class="col-6 mb-3"><label class="form-label fw-bold small">End Time</label><input type="datetime-local" id="endTime" class="form-control" required></div>
                     </div>
                 </form>
             </div>
