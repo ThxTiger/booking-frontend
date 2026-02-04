@@ -151,18 +151,23 @@ async function checkForActiveMeeting() {
                 return;
             }
 
-            // 🔴 PREVENT FLICKER: If subject is valid, use it. Don't overwrite with old data.
-            // If the subject is just a name (Organizer), and we previously had a detailed subject, keep the detailed one.
             const newSubject = event.subject;
             const newOrganizer = event.organizer?.emailAddress?.name || "Unknown";
-            
-            // Only update if the new subject is NOT the same as the organizer name (which happens when Outlook defaults)
-            // OR if the current banner is empty.
-            if (newSubject !== newOrganizer || document.getElementById('bannerSubject').innerText === "...") {
-                 document.getElementById('bannerSubject').textContent = newSubject;
+            const currentBannerText = document.getElementById('bannerSubject').textContent;
+
+            // 🔴 STICKY LOGIC: 
+            // If the new subject is JUST the organizer's name and we ALREADY have a 
+            // formatted subject (with a ':'), DO NOT overwrite it.
+            const isJustAName = (newSubject === newOrganizer);
+            const alreadyHasData = currentBannerText.includes(":");
+
+            if (!(isJustAName && alreadyHasData)) {
+                document.getElementById('bannerSubject').textContent = newSubject;
             }
+            
             document.getElementById('bannerOrganizer').textContent = newOrganizer;
 
+            // ... (rest of your logic for Checked-In vs Banner)
             if (event.categories && event.categories.includes("Checked-In")) {
                  banner.style.display = "none";
                  stopCheckInCountdown();
@@ -193,8 +198,9 @@ async function checkForActiveMeeting() {
             overlay.classList.add('d-none');
             stopCheckInCountdown(); stopMeetingEndTimer();
         }
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Error in check-in logic:", e); }
 }
+
 
 function startGenericCountdown(targetDate, elementId, expireText="00:00") {
     if (checkInCountdown) clearInterval(checkInCountdown);
