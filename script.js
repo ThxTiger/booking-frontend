@@ -17,6 +17,7 @@ let currentLockedEvent = null;
 let checkInCountdown = null;
 let meetingEndInterval = null;
 let sessionTimeout = null;
+let isAuthInProgress = false; // 🛑 PREVENTS DOUBLE-CLICK CRASHES
 
 // ================= INITIALIZATION =================
 document.addEventListener("DOMContentLoaded", async () => {
@@ -31,7 +32,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     } catch (e) { console.error(e); }
 });
 
-async function signIn() { try { await msalInstance.loginRedirect(loginRequest); } catch (e) { console.error(e); } }
+async function signIn() { 
+    if(isAuthInProgress) return;
+    isAuthInProgress = true;
+    try { await msalInstance.loginRedirect(loginRequest); } 
+    catch (e) { console.error(e); } 
+    finally { isAuthInProgress = false; }
+}
 
 function signOut() { 
     username = ""; 
@@ -51,7 +58,7 @@ function handleLoginSuccess(acc) {
     sessionTimeout = setTimeout(() => { alert("Session Expired."); signOut(); }, 120000);
 }
 
-// ================= CHECK-IN LOGIC (WITH DOWNGRADE PROTECTION) =================
+// ================= CHECK-IN LOGIC (STABLE) =================
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
@@ -69,6 +76,7 @@ async function checkForActiveMeeting() {
             const start = new Date(event.start.dateTime + 'Z');
             const end = new Date(event.end.dateTime + 'Z');
 
+            // 1. Meeting Over?
             if (now >= end) {
                 banner.style.display = "none";
                 overlay.classList.add('d-none');
@@ -76,25 +84,24 @@ async function checkForActiveMeeting() {
                 return;
             }
 
-            // 🛑 DOWNGRADE PROTECTION LOGIC 🛑
+            // 🛑 STRICT DOWNGRADE PROTECTION 🛑
+            // Prevents "Filiale : Desc" from turning into "Marwane EL HARFI"
             const incomingSubject = event.subject;
-            const incomingOrganizer = event.organizer?.emailAddress?.name || "Unknown";
-            const currentDisplayedSubject = document.getElementById('bannerSubject').innerText;
+            const currentDisplayed = document.getElementById('bannerSubject').innerText;
+            
+            // "High Quality" means it has a colon (our custom format)
+            const incomingIsGood = incomingSubject && incomingSubject.includes(":");
+            const currentIsGood = currentDisplayed && currentDisplayed.includes(":");
 
-            // Definition of "Good Data": Contains a colon (e.g., "Axians : Meeting")
-            const incomingIsHighQuality = incomingSubject.includes(":");
-            const currentIsHighQuality = currentDisplayedSubject.includes(":");
-
-            // Only update if:
-            // 1. The incoming data is High Quality (has a colon)
-            // 2. OR The current display is empty/generic (doesn't have a colon yet)
-            if (incomingIsHighQuality || !currentIsHighQuality) {
+            // Update IF: Incoming is good OR Current is bad/empty
+            if (incomingIsGood || !currentIsGood) {
                  document.getElementById('bannerSubject').textContent = incomingSubject;
             }
-            // Always update organizer (safe)
-            document.getElementById('bannerOrganizer').textContent = incomingOrganizer;
+            // Always safe to update organizer
+            const orgName = event.organizer?.emailAddress?.name || "Unknown";
+            document.getElementById('bannerOrganizer').textContent = orgName;
 
-            // ... (Rest of Check-In Logic) ...
+            // 2. Already Checked In?
             if (event.categories && event.categories.includes("Checked-In")) {
                  banner.style.display = "none";
                  stopCheckInCountdown();
@@ -102,6 +109,7 @@ async function checkForActiveMeeting() {
                  return;
             } 
             
+            // 3. Show Banner
             banner.style.display = "block";
             overlay.classList.add('d-none');
             const btn = document.getElementById('realCheckInBtn');
@@ -128,7 +136,6 @@ async function checkForActiveMeeting() {
     } catch (e) { console.error(e); }
 }
 
-// ... (Helpers) ...
 function startGenericCountdown(targetDate, elementId, expireText="00:00") {
     if (checkInCountdown) clearInterval(checkInCountdown);
     checkInCountdown = setInterval(() => {
@@ -137,10 +144,9 @@ function startGenericCountdown(targetDate, elementId, expireText="00:00") {
         const timerEl = document.getElementById(elementId);
         if (distance < 0) { timerEl.textContent = expireText; } 
         else {
-            const h = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const s = Math.floor((distance % (1000 * 60)) / 1000);
-            timerEl.textContent = h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
+            timerEl.textContent = `${m}m ${s}s`;
         }
     }, 1000);
 }
@@ -165,7 +171,11 @@ function showMeetingMode(event) {
     const overlay = document.getElementById('meetingInProgressOverlay');
     const start = new Date(event.start.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     const end = new Date(event.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    document.getElementById('overlaySubject').textContent = event.subject;
+    
+    // Use stored DOM values to ensure we keep the good subject
+    const safeSubject = document.getElementById('bannerSubject').textContent;
+    document.getElementById('overlaySubject').textContent = safeSubject.includes(":") ? safeSubject : event.subject;
+    
     document.getElementById('overlayOrganizer').textContent = `Booked by: ${event.organizer?.emailAddress?.name}`;
     document.getElementById('overlayTime').textContent = `${start} - ${end}`;
     overlay.classList.remove('d-none');
@@ -178,6 +188,7 @@ function startMeetingEndTimer(endTimeStr) {
     meetingEndInterval = setInterval(() => {
         const now = new Date().getTime();
         const distance = endTime - now;
+        const timerEl = document.getElementById('meetingEndTimer');
         if (distance < 0) {
             clearInterval(meetingEndInterval);
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
@@ -185,25 +196,46 @@ function startMeetingEndTimer(endTimeStr) {
         } else {
             const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const s = Math.floor((distance % (1000 * 60)) / 1000);
-            document.getElementById('meetingEndTimer').textContent = `${m}m ${s}s`;
+            timerEl.textContent = `${m}m ${s}s`;
         }
     }, 1000);
 }
 function stopMeetingEndTimer() { if (meetingEndInterval) clearInterval(meetingEndInterval); }
 
+// 🛑 SECURE EXIT (FIXED AUTH ERROR)
 async function secureExitMeetingMode() {
+    if (isAuthInProgress) {
+        console.log("Interaction already in progress. Ignoring click.");
+        return;
+    }
+    
     const organizerEmail = currentLockedEvent.organizer.emailAddress.address.toLowerCase();
+    isAuthInProgress = true; // LOCK
+
     try {
-        const loginResp = await msalInstance.loginPopup({ scopes: ["User.Read"], prompt: "login" });
+        const loginResp = await msalInstance.loginPopup({ 
+            scopes: ["User.Read"], 
+            prompt: "login" 
+        });
+        
         const verifiedEmail = loginResp.account.username.toLowerCase();
         if (verifiedEmail === organizerEmail) {
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
             currentLockedEvent = null; stopMeetingEndTimer(); checkForActiveMeeting();
         } else { alert(`⛔ ACCESS DENIED\nVerified: ${verifiedEmail}`); }
-    } catch (e) { console.error(e); }
+        
+    } catch (e) { 
+        console.error("Unlock Error:", e);
+        // Handle "user_cancelled" gracefully
+        if (e.errorCode !== "user_cancelled") {
+            alert("Authentication failed. Try again."); 
+        }
+    } finally {
+        isAuthInProgress = false; // UNLOCK
+    }
 }
 
-// ================= BOOKING & TIMELINE =================
+// ================= BOOKING (STYLED RECEIPT) =================
 async function createBooking() {
     if (!username) return alert("Please sign in first.");
     const index = document.getElementById('roomSelect').value;
@@ -243,7 +275,20 @@ async function createBooking() {
         });
         
         if (res.ok) {
-            alert(`✅ Booking Confirmed!`);
+            const startFmt = new Date(startInput).toLocaleString();
+            const endFmt = new Date(endInput).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+            
+            // ✅ EMOJI RECEIPT ALERT
+            alert(
+                `✅ BOOKING CONFIRMED\n\n` +
+                `📅 Time: ${startFmt} - ${endFmt}\n` +
+                `🏢 Unit: ${filiale}\n` +
+                `📝 Subject: ${subject}\n` +
+                `💡 Reason: ${desc}\n` +
+                `👥 Invitees: ${attendeesRaw || "None"}\n\n` +
+                `The meeting has been added to your calendar.`
+            );
+
             const modalEl = document.getElementById('bookingModal');
             const modal = bootstrap.Modal.getInstance(modalEl);
             if(modal) modal.hide(); else modalEl.classList.remove('show');
@@ -254,79 +299,6 @@ async function createBooking() {
         }
     } catch (e) { alert("Network Error: " + e.message); }
 }
-
-function renderTimeline(data, viewStart, viewEnd) {
-    const timelineContainer = document.getElementById('timeline');
-    timelineContainer.innerHTML = ''; 
-    const totalDurationMs = viewEnd - viewStart; 
-    
-    const track = document.createElement('div');
-    track.className = 'timeline-track';
-    
-    const numHours = 12;
-    for (let i = 0; i <= numHours; i++) {
-        let slotTime = new Date(viewStart.getTime() + i * 60 * 60 * 1000);
-        let pct = (i / numHours) * 100;
-
-        const label = document.createElement('div');
-        label.className = 'timeline-time-label';
-        label.style.left = `${pct}%`;
-        label.innerText = slotTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-        track.appendChild(label);
-
-        if (i > 0 && i < numHours) {
-            const line = document.createElement('div');
-            line.className = 'grid-line';
-            line.style.left = `${pct}%`;
-            track.appendChild(line);
-        }
-    }
-
-    const schedule = (data.value && data.value[0]) ? data.value[0] : null; 
-    if (schedule && schedule.scheduleItems) { 
-        schedule.scheduleItems.forEach(item => { 
-            if (item.status === 'busy') { 
-                const start = new Date(item.start.dateTime + 'Z'); 
-                const end = new Date(item.end.dateTime + 'Z'); 
-                
-                const leftPct = ((start - viewStart) / totalDurationMs) * 100; 
-                const widthPct = ((end - start) / totalDurationMs) * 100; 
-                
-                if (leftPct < 100 && (leftPct + widthPct) > 0) { 
-                    const block = document.createElement('div');
-                    block.className = 'event-block';
-                    block.style.left = `${Math.max(0, leftPct)}%`;
-                    block.style.width = `${Math.min(widthPct, 100 - Math.max(0, leftPct))}%`;
-                    block.innerHTML = '<span class="event-label">Busy</span>';
-
-                    block.addEventListener('mouseenter', (e) => showTooltip(e, item));
-                    block.addEventListener('mousemove', (e) => moveTooltip(e));
-                    block.addEventListener('mouseleave', hideTooltip);
-
-                    track.appendChild(block);
-                } 
-            } 
-        }); 
-    } 
-    timelineContainer.appendChild(track);
-}
-
-function showTooltip(e, item) {
-    const tooltip = document.getElementById('timelineTooltip');
-    const subject = item.subject || "Private Meeting";
-    const start = new Date(item.start.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    const end = new Date(item.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-    document.getElementById('tooltipSubject').innerText = subject;
-    document.getElementById('tooltipTime').innerText = `🕒 ${start} - ${end}`;
-    tooltip.style.display = 'block';
-    moveTooltip(e);
-}
-function moveTooltip(e) {
-    const tooltip = document.getElementById('timelineTooltip');
-    tooltip.style.left = (e.pageX + 15) + 'px';
-    tooltip.style.top = (e.pageY + 15) + 'px';
-}
-function hideTooltip() { document.getElementById('timelineTooltip').style.display = 'none'; }
 
 async function fetchRooms() { 
     try { 
@@ -358,7 +330,8 @@ async function loadAvailability(email) {
     document.getElementById('loadingSpinner').style.display = "inline"; 
     const now = new Date(); 
     const viewStart = new Date(now); 
-    viewStart.setHours(viewStart.getHours() - 1); // Start 1hr ago to see current meetings
+    // 🔴 TIMELINE FIX: Start 2 hours ago
+    viewStart.setHours(viewStart.getHours() - 2); 
     viewStart.setMinutes(0, 0, 0); 
     const viewEnd = new Date(viewStart.getTime() + 12 * 60 * 60 * 1000); 
     
@@ -389,4 +362,47 @@ function initModalTimes() {
     document.getElementById('startTime').value = now.toISOString().slice(0,16); 
     now.setMinutes(now.getMinutes()+30); 
     document.getElementById('endTime').value = now.toISOString().slice(0,16); 
+}
+function renderTimeline(data, viewStart, viewEnd) { 
+    const timelineContainer = document.getElementById('timeline'); 
+    timelineContainer.innerHTML = ''; 
+    const totalDurationMs = viewEnd - viewStart; 
+    const track = document.createElement('div'); 
+    track.className = 'timeline-track'; 
+    const numHours = 12; 
+    for (let i = 0; i <= numHours; i++) { 
+        let slotTime = new Date(viewStart.getTime() + i * 60 * 60 * 1000); 
+        let pct = (i / numHours) * 100; 
+        const label = document.createElement('div'); 
+        label.className = 'timeline-time-label'; 
+        label.style.left = `${pct}%`; 
+        label.innerText = slotTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); 
+        track.appendChild(label); 
+        if (i > 0 && i < numHours) { 
+            const line = document.createElement('div'); 
+            line.className = 'grid-line'; 
+            line.style.left = `${pct}%`; 
+            track.appendChild(line); 
+        } 
+    } 
+    const schedule = (data.value && data.value[0]) ? data.value[0] : null; 
+    if (schedule && schedule.scheduleItems) { 
+        schedule.scheduleItems.forEach(item => { 
+            if (item.status === 'busy') { 
+                const start = new Date(item.start.dateTime + 'Z'); 
+                const end = new Date(item.end.dateTime + 'Z'); 
+                const leftPct = ((start - viewStart) / totalDurationMs) * 100; 
+                const widthPct = ((end - start) / totalDurationMs) * 100; 
+                if (leftPct < 100 && (leftPct + widthPct) > 0) { 
+                    const block = document.createElement('div'); 
+                    block.className = 'event-block'; 
+                    block.style.left = `${Math.max(0, leftPct)}%`; 
+                    block.style.width = `${Math.min(widthPct, 100 - Math.max(0, leftPct))}%`; 
+                    block.innerHTML = '<span class="event-label">Busy</span>'; 
+                    track.appendChild(block); 
+                } 
+            } 
+        }); 
+    } 
+    timelineContainer.appendChild(track); 
 }
