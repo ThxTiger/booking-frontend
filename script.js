@@ -18,6 +18,7 @@ let checkInCountdown = null;
 let meetingEndInterval = null;
 let sessionTimeout = null;
 let isAuthInProgress = false; 
+let manuallyUnlockedEventId = null;
 
 // ================= INITIALIZATION =================
 document.addEventListener("DOMContentLoaded", async () => {
@@ -66,16 +67,16 @@ async function checkForActiveMeeting() {
 
     try {
         const res = await fetch(`${API_URL}/active-meeting?room_email=${roomEmail}`);
-        const event = await res.json();
+        let event = await res.json();
         
         const banner = document.getElementById('checkInBanner');
         const overlay = document.getElementById('meetingInProgressOverlay');
 
         if (event) {
             const now = new Date();
-            const start = new Date(event.start.dateTime + 'Z');
             const end = new Date(event.end.dateTime + 'Z');
 
+            // 1. Meeting Over?
             if (now >= end) {
                 banner.style.display = "none";
                 overlay.classList.add('d-none');
@@ -83,29 +84,58 @@ async function checkForActiveMeeting() {
                 return;
             }
 
-            const incomingSubject = event.subject;
-            const currentDisplayed = document.getElementById('bannerSubject').innerText;
-            const incomingIsGood = incomingSubject && incomingSubject.includes(":");
-            const currentIsGood = currentDisplayed && currentDisplayed.includes(":");
-
-            if (incomingIsGood || !currentIsGood) {
-                 document.getElementById('bannerSubject').textContent = incomingSubject;
+            // 🛠️ AUTO-REPAIR BAD SUBJECTS
+            // If Subject == Organizer (Bad Data), try to fix it from the bodyPreview
+            const organizerName = event.organizer?.emailAddress?.name || "Unknown";
+            
+            if (event.subject === organizerName) {
+                console.log("⚠️ Detected bad subject. Attempting repair...");
+                // Check if we already have a good subject on screen
+                const currentScreenSubject = document.getElementById('bannerSubject').innerText;
+                
+                if (currentScreenSubject.includes(":")) {
+                    // KEEP THE OLD GOOD ONE
+                    event.subject = currentScreenSubject;
+                } 
+                else if (event.bodyPreview) {
+                    // TRY TO PARSE FROM BODY: "Filiale: Axians Reason: Sync"
+                    // Simple Regex to extract Filiale
+                    const filialeMatch = event.bodyPreview.match(/Filiale:\s*(.*?)(Reason:|$)/);
+                    if (filialeMatch && filialeMatch[1]) {
+                        // Construct a temporary subject
+                        const cleanFiliale = filialeMatch[1].trim();
+                        event.subject = `${cleanFiliale} : Meeting`;
+                    }
+                }
             }
-            document.getElementById('bannerOrganizer').textContent = event.organizer?.emailAddress?.name || "Unknown";
 
+            // UPDATE UI
+            document.getElementById('bannerSubject').textContent = event.subject;
+            document.getElementById('bannerOrganizer').textContent = organizerName;
+
+            // 2. CHECKED IN STATE
             if (event.categories && event.categories.includes("Checked-In")) {
                  banner.style.display = "none";
                  stopCheckInCountdown();
-                 if (overlay.classList.contains('d-none')) showMeetingMode(event);
+                 
+                 // Show Red Screen (unless manually unlocked)
+                 if (overlay.classList.contains('d-none') && event.id !== manuallyUnlockedEventId) {
+                     showMeetingMode(event);
+                 }
                  return;
             } 
             
+            // 3. WAITING STATE
+            if (event.id !== manuallyUnlockedEventId) manuallyUnlockedEventId = null;
+
             banner.style.display = "block";
             overlay.classList.add('d-none');
             const btn = document.getElementById('realCheckInBtn');
             btn.onclick = () => performCheckIn(roomEmail, event.id, event);
 
+            const start = new Date(event.start.dateTime + 'Z');
             const minsUntil = Math.floor((start - now) / 60000);
+            
             if (minsUntil > 15) {
                 document.getElementById('bannerStatusTitle').textContent = "📅 Next Meeting";
                 document.getElementById('bannerBadge').className = "badge bg-info mb-1";
@@ -162,8 +192,7 @@ function showMeetingMode(event) {
     const start = new Date(event.start.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     const end = new Date(event.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    const safeSubject = document.getElementById('bannerSubject').textContent;
-    document.getElementById('overlaySubject').textContent = safeSubject.includes(":") ? safeSubject : event.subject;
+    document.getElementById('overlaySubject').textContent = event.subject;
     document.getElementById('overlayOrganizer').textContent = `Booked by: ${event.organizer?.emailAddress?.name}`;
     document.getElementById('overlayTime').textContent = `${start} - ${end}`;
     overlay.classList.remove('d-none');
@@ -189,7 +218,6 @@ function startMeetingEndTimer(endTimeStr) {
 }
 function stopMeetingEndTimer() { if (meetingEndInterval) clearInterval(meetingEndInterval); }
 
-// 🛑 END MEETING LOGIC (Replaces Unlock)
 async function secureEndMeeting() {
     if (isAuthInProgress) return;
     
@@ -209,8 +237,6 @@ async function secureEndMeeting() {
         const verifiedEmail = loginResp.account.username.toLowerCase();
         
         if (verifiedEmail === organizerEmail) {
-            
-            // Call API to END the meeting
             const res = await fetch(`${API_URL}/end-meeting`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -218,15 +244,15 @@ async function secureEndMeeting() {
             });
 
             if (res.ok) {
-                // Success! Close screen and refresh
+                // Manually Unlocked
+                manuallyUnlockedEventId = eventId;
                 document.getElementById('meetingInProgressOverlay').classList.add('d-none');
                 currentLockedEvent = null; 
                 stopMeetingEndTimer(); 
-                checkForActiveMeeting(); // Will see meeting is gone/ended
+                checkForActiveMeeting();
             } else {
                 alert("Error ending meeting. Please try again.");
             }
-            
         } else { alert(`⛔ ACCESS DENIED\nVerified: ${verifiedEmail}`); }
         
     } catch (e) { 
@@ -236,7 +262,7 @@ async function secureEndMeeting() {
     }
 }
 
-// ================= BOOKING =================
+// ================= BOOKING LOGIC =================
 async function createBooking() {
     if (!username) return alert("Please sign in first.");
     const index = document.getElementById('roomSelect').value;
@@ -398,11 +424,9 @@ function renderTimeline(data, viewStart, viewEnd) {
                     block.style.left = `${Math.max(0, leftPct)}%`; 
                     block.style.width = `${Math.min(widthPct, 100 - Math.max(0, leftPct))}%`; 
                     block.innerHTML = '<span class="event-label">Busy</span>'; 
-                    
                     block.addEventListener('mouseenter', (e) => showTooltip(e, item));
                     block.addEventListener('mousemove', (e) => moveTooltip(e));
                     block.addEventListener('mouseleave', hideTooltip);
-
                     track.appendChild(block); 
                 } 
             } 
@@ -410,7 +434,6 @@ function renderTimeline(data, viewStart, viewEnd) {
     } 
     timelineContainer.appendChild(track); 
 }
-
 function showTooltip(e, item) {
     const tooltip = document.getElementById('timelineTooltip');
     const subject = item.subject || "Private Meeting";
