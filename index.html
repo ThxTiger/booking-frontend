@@ -96,7 +96,7 @@
 
         <div class="d-flex flex-column align-items-center mt-5">
              <p class="small opacity-75 mb-2">Only the organizer can end this meeting early.</p>
-             <button class="btn btn-outline-light btn-lg border-2 fw-bold px-5 rounded-pill" onclick="secureEndMeeting()">
+            <button class="btn btn-outline-light btn-lg border-2 fw-bold px-5 rounded-pill" onclick="secureEndMeeting()">
                 🛑 END MEETING & FREE ROOM
             </button>
         </div>
@@ -114,7 +114,7 @@
                 <form id="bookingForm">
                     <div class="mb-3">
                         <label class="form-label fw-bold small">Business Unit / Filiale</label>
-                        <input type="text" id="filiale" class="form-control" placeholder="e.g. Axians..." list="filialeOptions" required>
+                        <input type="text" id="filiale" class="form-control" placeholder="e.g. Axians, Cegelec, Omexom, Actemium..." list="filialeOptions" required>
                         <datalist id="filialeOptions">
                             <option value="Axians"></option>
                             <option value="Cegelec"></option>
@@ -123,9 +123,18 @@
                             <option value="Actemium"></option>
                         </datalist>
                     </div>
-                    <div class="mb-3"><label class="form-label fw-bold small">Subject</label><input type="text" id="subject" class="form-control" required></div>
-                    <div class="mb-3"><label class="form-label fw-bold small">Reason</label><textarea id="description" class="form-control" rows="2"></textarea></div>
-                    <div class="mb-3"><label class="form-label fw-bold small">Invitees</label><input type="text" id="attendees" class="form-control" placeholder="bob@axians.com..."></div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Subject</label>
+                        <input type="text" id="subject" class="form-control" placeholder="e.g. Weekly Team Sync, Project Kickoff..." required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Reason</label>
+                        <textarea id="description" class="form-control" rows="2" placeholder="e.g. Discussing project milestones, budget review..."></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold small">Invitees</label>
+                        <input type="text" id="attendees" class="form-control" placeholder="e.g. bob@axians.com, sarah@vinci-energies.com...">
+                    </div>
                     <div class="row">
                         <div class="col-6 mb-3"><label class="form-label fw-bold small">Start Time</label><input type="datetime-local" id="startTime" class="form-control" required></div>
                         <div class="col-6 mb-3"><label class="form-label fw-bold small">End Time</label><input type="datetime-local" id="endTime" class="form-control" required></div>
