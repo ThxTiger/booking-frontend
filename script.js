@@ -1,9 +1,10 @@
 // ================= CONFIGURATION =================
 const API_URL = "https://booking-a-room-poc.onrender.com"; 
+
 const msalConfig = {
     auth: {
-        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8", // ⚠️ UPDATE
-        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6", // ⚠️ UPDATE
+        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8", 
+        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6",
         redirectUri: window.location.origin, 
     },
     cache: { cacheLocation: "sessionStorage" }
@@ -14,15 +15,15 @@ const msalInstance = new msal.PublicClientApplication(msalConfig);
 let username = ""; 
 let availableRooms = []; 
 let currentLockedEvent = null; 
-let checkInCountdown = null; // Timer for the 5-min Deadline
-let meetingEndInterval = null; // Timer for the Meeting End Auto-Exit
+let checkInCountdown = null;
+let meetingEndInterval = null;
 let sessionTimeout = null;
 
 // ================= INITIALIZATION =================
 document.addEventListener("DOMContentLoaded", async () => {
     initModalTimes();
     await fetchRooms();
-    setInterval(checkForActiveMeeting, 5000); // Check selected room every 5s
+    setInterval(checkForActiveMeeting, 5000); 
     
     try {
         await msalInstance.initialize();
@@ -50,9 +51,8 @@ function handleLoginSuccess(acc) {
     sessionTimeout = setTimeout(() => { alert("Session Expired."); signOut(); }, 120000);
 }
 
-// ================= ROOM SPECIFIC CHECK =================
+// ================= CHECK-IN LOGIC (Strict Per Room) =================
 async function checkForActiveMeeting() {
-    // 🔴 STRICT: ONLY check the currently selected room
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
     const roomEmail = availableRooms[index].emailAddress;
@@ -65,11 +65,10 @@ async function checkForActiveMeeting() {
         const overlay = document.getElementById('meetingInProgressOverlay');
 
         if (event) {
-            // 🔴 AUTO-EXIT CHECK: Is the meeting already over?
+            // Check Auto-Exit (Time Over?)
             const now = new Date();
             const endTime = new Date(event.end.dateTime + 'Z');
             if (now >= endTime) {
-                // Meeting finished. Hide everything.
                 banner.style.display = "none";
                 overlay.classList.add('d-none');
                 stopCheckInCountdown();
@@ -77,23 +76,26 @@ async function checkForActiveMeeting() {
                 return;
             }
 
-            // CASE 1: CHECKED IN -> RED SCREEN
+            // Populate Info (Banner & Overlay)
+            const subjectText = event.subject; // "Filiale : Description"
+            const organizerText = event.organizer?.emailAddress?.name || "Unknown";
+
+            // CASE 1: ALREADY CHECKED IN
             if (event.categories && event.categories.includes("Checked-In")) {
                  banner.style.display = "none";
                  stopCheckInCountdown();
                  
-                 // If Red Screen not showing, show it
                  if (overlay.classList.contains('d-none')) {
                      showMeetingMode(event);
                  }
             } 
-            // CASE 2: WAITING FOR CHECK-IN -> BANNER
+            // CASE 2: WAITING FOR CHECK-IN
             else {
                  banner.style.display = "block";
                  overlay.classList.add('d-none');
                  
-                 document.getElementById('bannerSubject').textContent = event.subject;
-                 document.getElementById('bannerOrganizer').textContent = event.organizer?.emailAddress?.name || "Unknown";
+                 document.getElementById('bannerSubject').textContent = subjectText;
+                 document.getElementById('bannerOrganizer').textContent = organizerText;
                  
                  const btn = document.getElementById('realCheckInBtn');
                  btn.onclick = () => performCheckIn(roomEmail, event.id, event);
@@ -101,7 +103,6 @@ async function checkForActiveMeeting() {
                  startCheckInCountdown(event.start.dateTime);
             }
         } else {
-            // No Active Meeting
             banner.style.display = "none";
             overlay.classList.add('d-none');
             stopCheckInCountdown();
@@ -110,7 +111,6 @@ async function checkForActiveMeeting() {
     } catch (e) { console.error(e); }
 }
 
-// ⏳ DEADLINE TIMER (5 Mins)
 function startCheckInCountdown(startTimeStr) {
     if (checkInCountdown) clearInterval(checkInCountdown);
     const startTime = new Date(startTimeStr + 'Z').getTime();
@@ -120,14 +120,11 @@ function startCheckInCountdown(startTimeStr) {
         const now = new Date().getTime();
         const distance = deadline - now;
         const timerEl = document.getElementById('checkInTimer');
-
-        if (distance < 0) {
-            clearInterval(checkInCountdown);
-            timerEl.textContent = "EXPIRED";
-        } else {
-            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-            timerEl.textContent = `${minutes}m ${seconds}s`;
+        if (distance < 0) { clearInterval(checkInCountdown); timerEl.textContent = "EXPIRED"; } 
+        else {
+            const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const s = Math.floor((distance % (1000 * 60)) / 1000);
+            timerEl.textContent = `${m}m ${s}s`;
         }
     }, 1000);
 }
@@ -155,11 +152,10 @@ function showMeetingMode(event) {
     const end = new Date(event.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
     document.getElementById('overlaySubject').textContent = event.subject;
+    document.getElementById('overlayOrganizer').textContent = `Booked by: ${event.organizer?.emailAddress?.name}`;
     document.getElementById('overlayTime').textContent = `${start} - ${end}`;
     
     overlay.classList.remove('d-none');
-    
-    // 🔴 START MEETING END TIMER
     startMeetingEndTimer(event.end.dateTime);
 }
 
@@ -171,20 +167,17 @@ function startMeetingEndTimer(endTimeStr) {
         const now = new Date().getTime();
         const distance = endTime - now;
         const timerEl = document.getElementById('meetingEndTimer');
-
         if (distance < 0) {
-            // 🛑 AUTO EXIT: Meeting Over
             clearInterval(meetingEndInterval);
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
-            checkForActiveMeeting(); // Refresh UI
+            checkForActiveMeeting();
         } else {
-            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-            timerEl.textContent = `${minutes}m ${seconds}s`;
+            const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const s = Math.floor((distance % (1000 * 60)) / 1000);
+            timerEl.textContent = `${m}m ${s}s`;
         }
     }, 1000);
 }
-
 function stopMeetingEndTimer() { if (meetingEndInterval) clearInterval(meetingEndInterval); }
 
 async function secureExitMeetingMode() {
@@ -192,7 +185,6 @@ async function secureExitMeetingMode() {
     try {
         const loginResp = await msalInstance.loginPopup({ scopes: ["User.Read"], prompt: "login" });
         const verifiedEmail = loginResp.account.username.toLowerCase();
-
         if (verifiedEmail === organizerEmail) {
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
             currentLockedEvent = null;
@@ -204,14 +196,17 @@ async function secureExitMeetingMode() {
     } catch (e) { console.error(e); }
 }
 
-// ================= BOOKING & HELPERS =================
+// ================= BOOKING FUNCTION (FIXED) =================
 async function createBooking() {
+    // 1. Check Login
     if (!username) return alert("Please sign in.");
+    
+    // 2. Check Room Selection
     const index = document.getElementById('roomSelect').value;
     if (!index) return alert("Select a room.");
     const roomEmail = availableRooms[index].emailAddress;
     
-    // ... form values ...
+    // 3. Get Form Data
     const subject = document.getElementById('subject').value;
     const filiale = document.getElementById('filiale').value; 
     const desc = document.getElementById('description').value;
@@ -220,6 +215,7 @@ async function createBooking() {
     const attendeesRaw = document.getElementById('attendees').value;
     let attendeeList = attendeesRaw.trim() ? attendeesRaw.split(',').map(e => e.trim()) : [];
 
+    // 4. Get Token (Robust)
     let accessToken = "";
     try {
         const account = msalInstance.getAllAccounts()[0];
@@ -230,9 +226,10 @@ async function createBooking() {
             const tokenResp = await msalInstance.acquireTokenPopup(loginRequest);
             accessToken = tokenResp.accessToken;
             handleLoginSuccess(tokenResp.account);
-        } catch (err) { return alert("Permission denied."); }
+        } catch (err) { return alert("Permission denied. Could not acquire token."); }
     }
 
+    // 5. Send to Backend
     try {
         const res = await fetch(`${API_URL}/book`, {
             method: 'POST',
@@ -249,10 +246,14 @@ async function createBooking() {
             bootstrap.Modal.getInstance(document.getElementById('bookingModal')).hide();
             loadAvailability(roomEmail); 
         } else {
+            // FIX: Ensure error is readable
             const err = await res.json();
             alert("Error: " + (err.detail || JSON.stringify(err)));
         }
-    } catch (e) { alert("Network Error: " + e.message); }
+    } catch (e) { 
+        console.error("Booking Error:", e);
+        alert("Network Error: Check console for details."); 
+    }
 }
 
 async function fetchRooms() { 
@@ -272,7 +273,8 @@ async function fetchRooms() {
         } 
     } catch (e) { console.error(e); } 
 }
-// ... (Keep handleRoomChange, loadAvailability, handleBookClick, initModalTimes, renderTimeline as they were) ...
+
+// ... (Keep helpers: handleRoomChange, loadAvailability, handleBookClick, initModalTimes, renderTimeline) ...
 function handleRoomChange() { const index = document.getElementById('roomSelect').value; const room = availableRooms[index]; if (room) { loadAvailability(room.emailAddress); checkForActiveMeeting(); } }
 async function loadAvailability(email) { if (!email) return; document.getElementById('loadingSpinner').style.display = "inline"; const now = new Date(); const viewStart = new Date(now); viewStart.setMinutes(0, 0, 0); const viewEnd = new Date(viewStart.getTime() + 12 * 60 * 60 * 1000); try { const res = await fetch(`${API_URL}/availability`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_email: email, start_time: viewStart.toISOString(), end_time: viewEnd.toISOString(), time_zone: "UTC" }) }); const data = await res.json(); renderTimeline(data, viewStart, viewEnd); } catch (err) { console.error(err); } finally { document.getElementById('loadingSpinner').style.display = "none"; } }
 function handleBookClick() { if(!username) { signIn(); return; } document.getElementById('displayEmail').value = username; new bootstrap.Modal(document.getElementById('bookingModal')).show(); }
