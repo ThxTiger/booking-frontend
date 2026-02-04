@@ -2,8 +2,8 @@
 const API_URL = "https://booking-a-room-poc.onrender.com"; 
 const msalConfig = {
     auth: {
-        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8",
-        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6",
+        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8", // ⚠️ UPDATE THIS
+        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6", // ⚠️ UPDATE THIS
         redirectUri: window.location.origin, 
     },
     cache: { cacheLocation: "sessionStorage" }
@@ -17,7 +17,10 @@ let currentLockedEvent = null;
 let checkInCountdown = null;
 let meetingEndInterval = null;
 let sessionTimeout = null;
-let isAuthInProgress = false; // 🛑 PREVENTS DOUBLE-CLICK CRASHES
+let isAuthInProgress = false; 
+
+// 🛑 NEW: REMEMBERS WHAT YOU UNLOCKED TO PREVENT LOOPS
+let manuallyUnlockedEventId = null;
 
 // ================= INITIALIZATION =================
 document.addEventListener("DOMContentLoaded", async () => {
@@ -58,7 +61,7 @@ function handleLoginSuccess(acc) {
     sessionTimeout = setTimeout(() => { alert("Session Expired."); signOut(); }, 120000);
 }
 
-// ================= CHECK-IN LOGIC (STABLE) =================
+// ================= CHECK-IN LOGIC =================
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
@@ -84,32 +87,36 @@ async function checkForActiveMeeting() {
                 return;
             }
 
-            // 🛑 STRICT DOWNGRADE PROTECTION 🛑
-            // Prevents "Filiale : Desc" from turning into "Marwane EL HARFI"
+            // Downgrade Protection (Prevent Text Flicker)
             const incomingSubject = event.subject;
             const currentDisplayed = document.getElementById('bannerSubject').innerText;
-            
-            // "High Quality" means it has a colon (our custom format)
             const incomingIsGood = incomingSubject && incomingSubject.includes(":");
             const currentIsGood = currentDisplayed && currentDisplayed.includes(":");
 
-            // Update IF: Incoming is good OR Current is bad/empty
             if (incomingIsGood || !currentIsGood) {
                  document.getElementById('bannerSubject').textContent = incomingSubject;
             }
-            // Always safe to update organizer
             const orgName = event.organizer?.emailAddress?.name || "Unknown";
             document.getElementById('bannerOrganizer').textContent = orgName;
 
-            // 2. Already Checked In?
+            // 2. CHECKED IN STATE
             if (event.categories && event.categories.includes("Checked-In")) {
                  banner.style.display = "none";
                  stopCheckInCountdown();
-                 if (overlay.classList.contains('d-none')) showMeetingMode(event);
+                 
+                 // 🛑 LOOP FIX: Only show Red Screen if we haven't manually unlocked THIS event
+                 if (overlay.classList.contains('d-none') && event.id !== manuallyUnlockedEventId) {
+                     showMeetingMode(event);
+                 }
                  return;
             } 
             
-            // 3. Show Banner
+            // 3. WAITING STATE
+            // Reset unlock memory if we see a NEW, different meeting
+            if (event.id !== manuallyUnlockedEventId) {
+                manuallyUnlockedEventId = null;
+            }
+
             banner.style.display = "block";
             overlay.classList.add('d-none');
             const btn = document.getElementById('realCheckInBtn');
@@ -144,9 +151,10 @@ function startGenericCountdown(targetDate, elementId, expireText="00:00") {
         const timerEl = document.getElementById(elementId);
         if (distance < 0) { timerEl.textContent = expireText; } 
         else {
+            const h = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const s = Math.floor((distance % (1000 * 60)) / 1000);
-            timerEl.textContent = `${m}m ${s}s`;
+            timerEl.textContent = h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
         }
     }, 1000);
 }
@@ -172,7 +180,6 @@ function showMeetingMode(event) {
     const start = new Date(event.start.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     const end = new Date(event.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    // Use stored DOM values to ensure we keep the good subject
     const safeSubject = document.getElementById('bannerSubject').textContent;
     document.getElementById('overlaySubject').textContent = safeSubject.includes(":") ? safeSubject : event.subject;
     
@@ -188,7 +195,6 @@ function startMeetingEndTimer(endTimeStr) {
     meetingEndInterval = setInterval(() => {
         const now = new Date().getTime();
         const distance = endTime - now;
-        const timerEl = document.getElementById('meetingEndTimer');
         if (distance < 0) {
             clearInterval(meetingEndInterval);
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
@@ -196,21 +202,17 @@ function startMeetingEndTimer(endTimeStr) {
         } else {
             const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const s = Math.floor((distance % (1000 * 60)) / 1000);
-            timerEl.textContent = `${m}m ${s}s`;
+            document.getElementById('meetingEndTimer').textContent = `${m}m ${s}s`;
         }
     }, 1000);
 }
 function stopMeetingEndTimer() { if (meetingEndInterval) clearInterval(meetingEndInterval); }
 
-// 🛑 SECURE EXIT (FIXED AUTH ERROR)
 async function secureExitMeetingMode() {
-    if (isAuthInProgress) {
-        console.log("Interaction already in progress. Ignoring click.");
-        return;
-    }
+    if (isAuthInProgress) return;
     
     const organizerEmail = currentLockedEvent.organizer.emailAddress.address.toLowerCase();
-    isAuthInProgress = true; // LOCK
+    isAuthInProgress = true;
 
     try {
         const loginResp = await msalInstance.loginPopup({ 
@@ -220,18 +222,21 @@ async function secureExitMeetingMode() {
         
         const verifiedEmail = loginResp.account.username.toLowerCase();
         if (verifiedEmail === organizerEmail) {
+            
+            // 🛑 SAVE ID TO PREVENT RE-LOCKING
+            manuallyUnlockedEventId = currentLockedEvent.id;
+            
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
-            currentLockedEvent = null; stopMeetingEndTimer(); checkForActiveMeeting();
+            currentLockedEvent = null; 
+            stopMeetingEndTimer(); 
+            checkForActiveMeeting();
+            
         } else { alert(`⛔ ACCESS DENIED\nVerified: ${verifiedEmail}`); }
         
     } catch (e) { 
-        console.error("Unlock Error:", e);
-        // Handle "user_cancelled" gracefully
-        if (e.errorCode !== "user_cancelled") {
-            alert("Authentication failed. Try again."); 
-        }
+        if (e.errorCode !== "user_cancelled") alert("Authentication failed."); 
     } finally {
-        isAuthInProgress = false; // UNLOCK
+        isAuthInProgress = false;
     }
 }
 
@@ -278,7 +283,6 @@ async function createBooking() {
             const startFmt = new Date(startInput).toLocaleString();
             const endFmt = new Date(endInput).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
             
-            // ✅ EMOJI RECEIPT ALERT
             alert(
                 `✅ BOOKING CONFIRMED\n\n` +
                 `📅 Time: ${startFmt} - ${endFmt}\n` +
@@ -330,7 +334,6 @@ async function loadAvailability(email) {
     document.getElementById('loadingSpinner').style.display = "inline"; 
     const now = new Date(); 
     const viewStart = new Date(now); 
-    // 🔴 TIMELINE FIX: Start 2 hours ago
     viewStart.setHours(viewStart.getHours() - 2); 
     viewStart.setMinutes(0, 0, 0); 
     const viewEnd = new Date(viewStart.getTime() + 12 * 60 * 60 * 1000); 
@@ -399,6 +402,11 @@ function renderTimeline(data, viewStart, viewEnd) {
                     block.style.left = `${Math.max(0, leftPct)}%`; 
                     block.style.width = `${Math.min(widthPct, 100 - Math.max(0, leftPct))}%`; 
                     block.innerHTML = '<span class="event-label">Busy</span>'; 
+                    
+                    block.addEventListener('mouseenter', (e) => showTooltip(e, item));
+                    block.addEventListener('mousemove', (e) => moveTooltip(e));
+                    block.addEventListener('mouseleave', hideTooltip);
+
                     track.appendChild(block); 
                 } 
             } 
@@ -406,3 +414,20 @@ function renderTimeline(data, viewStart, viewEnd) {
     } 
     timelineContainer.appendChild(track); 
 }
+
+function showTooltip(e, item) {
+    const tooltip = document.getElementById('timelineTooltip');
+    const subject = item.subject || "Private Meeting";
+    const start = new Date(item.start.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    const end = new Date(item.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    document.getElementById('tooltipSubject').innerText = subject;
+    document.getElementById('tooltipTime').innerText = `🕒 ${start} - ${end}`;
+    tooltip.style.display = 'block';
+    moveTooltip(e);
+}
+function moveTooltip(e) {
+    const tooltip = document.getElementById('timelineTooltip');
+    tooltip.style.left = (e.pageX + 15) + 'px';
+    tooltip.style.top = (e.pageY + 15) + 'px';
+}
+function hideTooltip() { document.getElementById('timelineTooltip').style.display = 'none'; }
