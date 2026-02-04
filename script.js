@@ -142,10 +142,11 @@ async function checkForActiveMeeting() {
                 document.getElementById('bannerBadge').textContent = "STARTS IN";
                 startGenericCountdown(start, "checkInTimer");
             } else {
-                document.getElementById('bannerStatusTitle').textContent = "⚠️ Check-In Required";
+                // 🔴 UPDATED WARNING TEXT
+                document.getElementById('bannerStatusTitle').textContent = "⚠️ Meeting Started! Check In or Auto-Cancel";
                 document.getElementById('bannerBadge').className = "badge bg-danger mb-1";
                 document.getElementById('bannerBadge').textContent = "DEADLINE";
-                const deadline = new Date(start.getTime() + 5*60000); 
+                const deadline = new Date(start.getTime() + 5*60000); // 5 Minutes
                 startGenericCountdown(deadline, "checkInTimer", "EXPIRED");
             }
         } else {
