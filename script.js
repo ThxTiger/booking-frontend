@@ -84,27 +84,27 @@ async function checkForActiveMeeting() {
                 return;
             }
 
-            // 🛠️ AUTO-REPAIR BAD SUBJECTS
-            // If Subject == Organizer (Bad Data), try to fix it from the bodyPreview
+            // 🛠️ AUTO-REPAIR BAD SUBJECTS 🛠️
             const organizerName = event.organizer?.emailAddress?.name || "Unknown";
             
+            // If the subject is just the Name, it's BROKEN. Let's fix it.
             if (event.subject === organizerName) {
-                console.log("⚠️ Detected bad subject. Attempting repair...");
-                // Check if we already have a good subject on screen
-                const currentScreenSubject = document.getElementById('bannerSubject').innerText;
                 
+                // Strategy A: Do we have a good subject on screen already?
+                const currentScreenSubject = document.getElementById('bannerSubject').innerText;
                 if (currentScreenSubject.includes(":")) {
-                    // KEEP THE OLD GOOD ONE
-                    event.subject = currentScreenSubject;
+                    event.subject = currentScreenSubject; // Keep the good one
                 } 
+                // Strategy B: Parse the bodyPreview from Backend
                 else if (event.bodyPreview) {
-                    // TRY TO PARSE FROM BODY: "Filiale: Axians Reason: Sync"
-                    // Simple Regex to extract Filiale
-                    const filialeMatch = event.bodyPreview.match(/Filiale:\s*(.*?)(Reason:|$)/);
+                    // Look for "Filiale: X Reason: Y" pattern
+                    const filialeMatch = event.bodyPreview.match(/Filiale:\s*(.*?)(Reason:|$)/i);
+                    const reasonMatch = event.bodyPreview.match(/Reason:\s*(.*)/i);
+                    
                     if (filialeMatch && filialeMatch[1]) {
-                        // Construct a temporary subject
-                        const cleanFiliale = filialeMatch[1].trim();
-                        event.subject = `${cleanFiliale} : Meeting`;
+                        const f = filialeMatch[1].trim();
+                        const r = reasonMatch && reasonMatch[1] ? reasonMatch[1].trim().substring(0, 30) + "..." : "Meeting";
+                        event.subject = `${f} : ${r}`;
                     }
                 }
             }
@@ -118,7 +118,6 @@ async function checkForActiveMeeting() {
                  banner.style.display = "none";
                  stopCheckInCountdown();
                  
-                 // Show Red Screen (unless manually unlocked)
                  if (overlay.classList.contains('d-none') && event.id !== manuallyUnlockedEventId) {
                      showMeetingMode(event);
                  }
@@ -193,7 +192,10 @@ function showMeetingMode(event) {
     const start = new Date(event.start.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     const end = new Date(event.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    document.getElementById('overlaySubject').textContent = event.subject;
+    // Ensure we use the repaired subject if available
+    const safeSubject = document.getElementById('bannerSubject').textContent;
+    document.getElementById('overlaySubject').textContent = safeSubject.includes(":") ? safeSubject : event.subject;
+    
     document.getElementById('overlayOrganizer').textContent = `Booked by: ${event.organizer?.emailAddress?.name}`;
     document.getElementById('overlayTime').textContent = `${start} - ${end}`;
     overlay.classList.remove('d-none');
@@ -245,7 +247,6 @@ async function secureEndMeeting() {
             });
 
             if (res.ok) {
-                // Manually Unlocked
                 manuallyUnlockedEventId = eventId;
                 document.getElementById('meetingInProgressOverlay').classList.add('d-none');
                 currentLockedEvent = null; 
@@ -263,7 +264,7 @@ async function secureEndMeeting() {
     }
 }
 
-// ================= BOOKING LOGIC =================
+// ================= BOOKING =================
 async function createBooking() {
     if (!username) return alert("Please sign in first.");
     const index = document.getElementById('roomSelect').value;
