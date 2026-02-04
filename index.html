@@ -13,14 +13,10 @@
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
         <div class="d-flex align-items-center gap-4">
-            
             <img src="logo-vinci.png" alt="Vinci Energies" height="50">
-            
             <div class="vr" style="height: 40px; border-left: 2px solid #ccc;"></div>
-            
             <img src="logo-axians.png" alt="Axians" height="40">
         </div>
-        
         <div class="d-flex align-items-center gap-3">
             <span id="userWelcome" class="text-secondary small fw-bold" style="display:none;"></span>
             <button id="loginBtn" class="btn btn-dark btn-sm" onclick="signIn()">🔒 Sign In</button>
@@ -38,14 +34,12 @@
                     </select>
                 </div>
             </div>
-            
              <button class="btn btn-primary w-100 py-3 fw-bold shadow-sm" onclick="handleBookClick()">
                 ➕ NEW BOOKING
             </button>
         </div>
 
         <div class="col-md-8">
-            
             <div class="d-grid mb-3">
                 <button id="checkInBtn" class="btn btn-success btn-lg fw-bold shadow-sm" style="display:none;">
                     ✅ CHECK IN
@@ -67,6 +61,19 @@
     </div>
 </div>
 
+<div id="meetingInProgressOverlay" class="d-none position-fixed top-0 start-0 w-100 h-100 bg-danger text-white d-flex flex-column justify-content-center align-items-center" style="z-index: 2000;">
+    <div class="text-center">
+        <h1 class="display-1 fw-bold mb-4">⛔</h1>
+        <h1 class="display-3 fw-bold">MEETING IN PROGRESS</h1>
+        <h2 id="overlaySubject" class="mt-4 text-warning">Sync</h2>
+        <h3 id="overlayTime" class="fw-light">--:--</h3>
+        <div class="mt-5">
+            <p class="lead">Please do not disturb.</p>
+            <button class="btn btn-outline-light btn-sm mt-4" onclick="exitMeetingMode()">Exit Screen</button>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="bookingModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
@@ -78,39 +85,23 @@
                 <form id="bookingForm">
                     <div class="mb-3">
                         <label class="form-label fw-bold small">Business Unit / Filiale</label>
-                        <input type="text" id="filiale" class="form-control" placeholder="e.g. Axians, Cegelec, Omexom..." required>
+                        <input type="text" id="filiale" class="form-control" placeholder="e.g. Axians..." required>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold small">Meeting Subject</label>
-                        <input type="text" id="subject" class="form-control" placeholder="e.g. Weekly Sync" required>
+                        <input type="text" id="subject" class="form-control" required>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold small">Description / Reason</label>
-                        <textarea id="description" class="form-control" rows="2" placeholder="e.g. Pour équipe achats et logistique..."></textarea>
+                        <textarea id="description" class="form-control" rows="2"></textarea>
                     </div>
-
                     <div class="mb-3">
                         <label class="form-label fw-bold small">Invite Colleagues (Optional)</label>
-                        <input type="text" id="attendees" class="form-control" placeholder="bob@axians.com, alice@axians.com">
-                        <div class="form-text">Separate emails with commas.</div>
+                        <input type="text" id="attendees" class="form-control">
                     </div>
-                    
                     <div class="row">
-                        <div class="col-6 mb-3">
-                            <label class="form-label fw-bold small">Start Time</label>
-                            <input type="datetime-local" id="startTime" class="form-control" required>
-                        </div>
-                        <div class="col-6 mb-3">
-                            <label class="form-label fw-bold small">End Time</label>
-                            <input type="datetime-local" id="endTime" class="form-control" required>
-                        </div>
-                    </div>
-
-                    <div class="mb-2">
-                        <label class="form-label fw-bold small">Organizer</label>
-                        <input type="text" id="displayEmail" class="form-control bg-light form-control-sm" readonly>
+                        <div class="col-6 mb-3"><label class="form-label fw-bold small">Start Time</label><input type="datetime-local" id="startTime" class="form-control" required></div>
+                        <div class="col-6 mb-3"><label class="form-label fw-bold small">End Time</label><input type="datetime-local" id="endTime" class="form-control" required></div>
                     </div>
                 </form>
             </div>
@@ -124,6 +115,5 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="script.js"></script>
-
 </body>
 </html>
