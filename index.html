@@ -95,9 +95,9 @@
         </div>
 
         <div class="d-flex flex-column align-items-center mt-5">
-             <p class="small opacity-75 mb-2">Only the organizer can unlock this screen early.</p>
-            <button class="btn btn-outline-light btn-lg border-2 fw-bold px-5 rounded-pill" onclick="secureExitMeetingMode()">
-                🔓 UNLOCK SCREEN
+             <p class="small opacity-75 mb-2">Only the organizer can end this meeting early.</p>
+             <button class="btn btn-outline-light btn-lg border-2 fw-bold px-5 rounded-pill" onclick="secureEndMeeting()">
+                🛑 END MEETING & FREE ROOM
             </button>
         </div>
     </div>
@@ -123,7 +123,6 @@
                             <option value="Actemium"></option>
                         </datalist>
                     </div>
-
                     <div class="mb-3"><label class="form-label fw-bold small">Subject</label><input type="text" id="subject" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label fw-bold small">Reason</label><textarea id="description" class="form-control" rows="2"></textarea></div>
                     <div class="mb-3"><label class="form-label fw-bold small">Invitees</label><input type="text" id="attendees" class="form-control" placeholder="bob@axians.com..."></div>
