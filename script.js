@@ -3,7 +3,7 @@ const API_URL = "https://booking-a-room-poc.onrender.com";
 const msalConfig = {
     auth: {
         clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8",
-        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6",
+        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6", 
         redirectUri: window.location.origin, 
     },
     cache: { cacheLocation: "sessionStorage" }
@@ -76,7 +76,6 @@ async function checkForActiveMeeting() {
             const now = new Date();
             const end = new Date(event.end.dateTime + 'Z');
 
-            // 1. Meeting Over?
             if (now >= end) {
                 banner.style.display = "none";
                 overlay.classList.add('d-none');
@@ -84,27 +83,38 @@ async function checkForActiveMeeting() {
                 return;
             }
 
-            // 🛠️ AUTO-REPAIR BAD SUBJECTS 🛠️
+            // 🛠️ AUTO-REPAIR LOGIC (ROBUST VERSION) 🛠️
             const organizerName = event.organizer?.emailAddress?.name || "Unknown";
-            
-            // If the subject is just the Name, it's BROKEN. Let's fix it.
-            if (event.subject === organizerName) {
+            const cleanSubject = (event.subject || "").trim().toLowerCase();
+            const cleanOrg = organizerName.trim().toLowerCase();
+
+            // CHECK: Is the subject basically just the organizer's name?
+            if (cleanSubject === cleanOrg || cleanSubject.includes(cleanOrg)) {
                 
-                // Strategy A: Do we have a good subject on screen already?
+                console.log("⚠️ Bad Subject Detected. Attempting Repair...");
+
+                // 1. Try to recover from the UI (if we fixed it before)
                 const currentScreenSubject = document.getElementById('bannerSubject').innerText;
                 if (currentScreenSubject.includes(":")) {
-                    event.subject = currentScreenSubject; // Keep the good one
+                    event.subject = currentScreenSubject;
                 } 
-                // Strategy B: Parse the bodyPreview from Backend
+                // 2. Try to parse the Body Preview
                 else if (event.bodyPreview) {
-                    // Look for "Filiale: X Reason: Y" pattern
-                    const filialeMatch = event.bodyPreview.match(/Filiale:\s*(.*?)(Reason:|$)/i);
-                    const reasonMatch = event.bodyPreview.match(/Reason:\s*(.*)/i);
+                    // Try to find "Filiale:" and "Reason:" loosely
+                    // Matches "Filiale: Something" or "Filiale : Something"
+                    const filialeMatch = event.bodyPreview.match(/Filiale\s*:\s*(.*?)(Reason|Subject|$)/i);
+                    const reasonMatch = event.bodyPreview.match(/Reason\s*:\s*(.*)/i);
                     
                     if (filialeMatch && filialeMatch[1]) {
                         const f = filialeMatch[1].trim();
-                        const r = reasonMatch && reasonMatch[1] ? reasonMatch[1].trim().substring(0, 30) + "..." : "Meeting";
+                        const r = reasonMatch && reasonMatch[1] ? reasonMatch[1].trim().substring(0, 40) + "..." : "Meeting";
                         event.subject = `${f} : ${r}`;
+                    } else {
+                        // 3. Fallback: Just grab the first chunk of text from the body
+                        const fallbackText = event.bodyPreview.substring(0, 50).replace(/\n/g, " ");
+                        if (fallbackText.length > 5) {
+                            event.subject = `Meeting : ${fallbackText}...`;
+                        }
                     }
                 }
             }
@@ -117,7 +127,6 @@ async function checkForActiveMeeting() {
             if (event.categories && event.categories.includes("Checked-In")) {
                  banner.style.display = "none";
                  stopCheckInCountdown();
-                 
                  if (overlay.classList.contains('d-none') && event.id !== manuallyUnlockedEventId) {
                      showMeetingMode(event);
                  }
@@ -141,11 +150,10 @@ async function checkForActiveMeeting() {
                 document.getElementById('bannerBadge').textContent = "STARTS IN";
                 startGenericCountdown(start, "checkInTimer");
             } else {
-                // 🔴 UPDATED WARNING TEXT
                 document.getElementById('bannerStatusTitle').textContent = "⚠️ Meeting Started! Check In or Auto-Cancel";
                 document.getElementById('bannerBadge').className = "badge bg-danger mb-1";
                 document.getElementById('bannerBadge').textContent = "DEADLINE";
-                const deadline = new Date(start.getTime() + 5*60000); // 5 Minutes
+                const deadline = new Date(start.getTime() + 5*60000); 
                 startGenericCountdown(deadline, "checkInTimer", "EXPIRED");
             }
         } else {
