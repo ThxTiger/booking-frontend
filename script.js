@@ -1,9 +1,8 @@
 // ================= CONFIGURATION =================
 const API_URL = "https://booking-a-room-poc.onrender.com"; 
-
 const msalConfig = {
     auth: {
-        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8", 
+        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8",
         authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6",
         redirectUri: window.location.origin, 
     },
@@ -51,7 +50,7 @@ function handleLoginSuccess(acc) {
     sessionTimeout = setTimeout(() => { alert("Session Expired."); signOut(); }, 120000);
 }
 
-// ================= CHECK-IN LOGIC (Strict Per Room) =================
+// ================= LOGIC: FIND NEXT MEETING =================
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
@@ -65,69 +64,90 @@ async function checkForActiveMeeting() {
         const overlay = document.getElementById('meetingInProgressOverlay');
 
         if (event) {
-            // Check Auto-Exit (Time Over?)
             const now = new Date();
-            const endTime = new Date(event.end.dateTime + 'Z');
-            if (now >= endTime) {
+            const start = new Date(event.start.dateTime + 'Z');
+            const end = new Date(event.end.dateTime + 'Z');
+
+            // 1. Is meeting OVER?
+            if (now >= end) {
                 banner.style.display = "none";
                 overlay.classList.add('d-none');
-                stopCheckInCountdown();
-                stopMeetingEndTimer();
+                stopCheckInCountdown(); stopMeetingEndTimer();
                 return;
             }
 
-            // Populate Info (Banner & Overlay)
-            const subjectText = event.subject; // "Filiale : Description"
-            const organizerText = event.organizer?.emailAddress?.name || "Unknown";
-
-            // CASE 1: ALREADY CHECKED IN
+            // 2. Is meeting ALREADY CHECKED IN?
             if (event.categories && event.categories.includes("Checked-In")) {
                  banner.style.display = "none";
                  stopCheckInCountdown();
-                 
-                 if (overlay.classList.contains('d-none')) {
-                     showMeetingMode(event);
-                 }
+                 if (overlay.classList.contains('d-none')) showMeetingMode(event);
+                 return;
             } 
-            // CASE 2: WAITING FOR CHECK-IN
-            else {
-                 banner.style.display = "block";
-                 overlay.classList.add('d-none');
-                 
-                 document.getElementById('bannerSubject').textContent = subjectText;
-                 document.getElementById('bannerOrganizer').textContent = organizerText;
-                 
-                 const btn = document.getElementById('realCheckInBtn');
-                 btn.onclick = () => performCheckIn(roomEmail, event.id, event);
-                 
-                 startCheckInCountdown(event.start.dateTime);
+            
+            // 3. SHOW BANNER (Active OR Upcoming)
+            banner.style.display = "block";
+            overlay.classList.add('d-none');
+            
+            document.getElementById('bannerSubject').textContent = event.subject;
+            document.getElementById('bannerOrganizer').textContent = event.organizer?.emailAddress?.name || "Unknown";
+            const btn = document.getElementById('realCheckInBtn');
+            btn.onclick = () => performCheckIn(roomEmail, event.id, event);
+
+            // 🔴 STATE CHECK: Is it Active Now or Future?
+            // "Active" = Starts within 15 mins OR already started
+            const timeDiff = start - now;
+            const minutesUntilStart = Math.floor(timeDiff / 60000);
+
+            if (minutesUntilStart > 15) {
+                // FUTURE MODE: "Next Meeting"
+                document.getElementById('bannerStatusTitle').textContent = "📅 Next Meeting";
+                document.getElementById('bannerBadge').textContent = "STARTS IN";
+                document.getElementById('bannerBadge').className = "badge bg-info mb-1";
+                // Disable button if too early? (Optional, but user asked for check-in option)
+                // We leave it enabled or you can disable: btn.disabled = true;
+                
+                // Countdown to START
+                startGenericCountdown(start, "checkInTimer");
+            } else {
+                // ACTION MODE: "Check-In Required"
+                document.getElementById('bannerStatusTitle').textContent = "⚠️ Check-In Required";
+                document.getElementById('bannerBadge').textContent = "DEADLINE";
+                document.getElementById('bannerBadge').className = "badge bg-danger mb-1";
+                
+                // Deadline = Start + 5 mins
+                const deadline = new Date(start.getTime() + 5*60000);
+                startGenericCountdown(deadline, "checkInTimer", "EXPIRED");
             }
+
         } else {
             banner.style.display = "none";
             overlay.classList.add('d-none');
-            stopCheckInCountdown();
-            stopMeetingEndTimer();
+            stopCheckInCountdown(); stopMeetingEndTimer();
         }
     } catch (e) { console.error(e); }
 }
 
-function startCheckInCountdown(startTimeStr) {
+function startGenericCountdown(targetDate, elementId, expireText="00:00") {
     if (checkInCountdown) clearInterval(checkInCountdown);
-    const startTime = new Date(startTimeStr + 'Z').getTime();
-    const deadline = startTime + (5 * 60 * 1000); 
-
+    
     checkInCountdown = setInterval(() => {
         const now = new Date().getTime();
-        const distance = deadline - now;
-        const timerEl = document.getElementById('checkInTimer');
-        if (distance < 0) { clearInterval(checkInCountdown); timerEl.textContent = "EXPIRED"; } 
-        else {
+        const distance = targetDate.getTime() - now;
+        const timerEl = document.getElementById(elementId);
+        
+        if (distance < 0) {
+            timerEl.textContent = expireText;
+        } else {
+            const h = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const s = Math.floor((distance % (1000 * 60)) / 1000);
-            timerEl.textContent = `${m}m ${s}s`;
+            
+            if (h > 0) timerEl.textContent = `${h}h ${m}m`;
+            else timerEl.textContent = `${m}m ${s}s`;
         }
     }, 1000);
 }
+
 function stopCheckInCountdown() { if (checkInCountdown) clearInterval(checkInCountdown); }
 
 async function performCheckIn(roomEmail, eventId, eventDetails) {
@@ -144,7 +164,6 @@ async function performCheckIn(roomEmail, eventId, eventDetails) {
     } catch (e) { alert(e.message); }
 }
 
-// ================= RED SCREEN & AUTO EXIT =================
 function showMeetingMode(event) {
     currentLockedEvent = event;
     const overlay = document.getElementById('meetingInProgressOverlay');
@@ -154,7 +173,6 @@ function showMeetingMode(event) {
     document.getElementById('overlaySubject').textContent = event.subject;
     document.getElementById('overlayOrganizer').textContent = `Booked by: ${event.organizer?.emailAddress?.name}`;
     document.getElementById('overlayTime').textContent = `${start} - ${end}`;
-    
     overlay.classList.remove('d-none');
     startMeetingEndTimer(event.end.dateTime);
 }
@@ -162,7 +180,6 @@ function showMeetingMode(event) {
 function startMeetingEndTimer(endTimeStr) {
     if (meetingEndInterval) clearInterval(meetingEndInterval);
     const endTime = new Date(endTimeStr + 'Z').getTime();
-
     meetingEndInterval = setInterval(() => {
         const now = new Date().getTime();
         const distance = endTime - now;
@@ -187,26 +204,19 @@ async function secureExitMeetingMode() {
         const verifiedEmail = loginResp.account.username.toLowerCase();
         if (verifiedEmail === organizerEmail) {
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
-            currentLockedEvent = null;
-            stopMeetingEndTimer();
-            checkForActiveMeeting();
-        } else {
-            alert(`⛔ ACCESS DENIED\n\nVerified: ${verifiedEmail}\nOrganizer: ${organizerEmail}`);
-        }
+            currentLockedEvent = null; stopMeetingEndTimer(); checkForActiveMeeting();
+        } else { alert(`⛔ ACCESS DENIED\nVerified: ${verifiedEmail}`); }
     } catch (e) { console.error(e); }
 }
 
-// ================= BOOKING FUNCTION (FIXED) =================
+// ================= BOOKING (FIXED) =================
 async function createBooking() {
-    // 1. Check Login
-    if (!username) return alert("Please sign in.");
-    
-    // 2. Check Room Selection
+    if (!username) return alert("Please sign in first.");
     const index = document.getElementById('roomSelect').value;
     if (!index) return alert("Select a room.");
     const roomEmail = availableRooms[index].emailAddress;
     
-    // 3. Get Form Data
+    // ... form values ...
     const subject = document.getElementById('subject').value;
     const filiale = document.getElementById('filiale').value; 
     const desc = document.getElementById('description').value;
@@ -215,7 +225,6 @@ async function createBooking() {
     const attendeesRaw = document.getElementById('attendees').value;
     let attendeeList = attendeesRaw.trim() ? attendeesRaw.split(',').map(e => e.trim()) : [];
 
-    // 4. Get Token (Robust)
     let accessToken = "";
     try {
         const account = msalInstance.getAllAccounts()[0];
@@ -226,10 +235,9 @@ async function createBooking() {
             const tokenResp = await msalInstance.acquireTokenPopup(loginRequest);
             accessToken = tokenResp.accessToken;
             handleLoginSuccess(tokenResp.account);
-        } catch (err) { return alert("Permission denied. Could not acquire token."); }
+        } catch (err) { return alert("Permission denied: " + err.message); }
     }
 
-    // 5. Send to Backend
     try {
         const res = await fetch(`${API_URL}/book`, {
             method: 'POST',
@@ -243,38 +251,22 @@ async function createBooking() {
         
         if (res.ok) {
             alert(`✅ Booking Confirmed!`);
-            bootstrap.Modal.getInstance(document.getElementById('bookingModal')).hide();
+            // FORCE CLOSE MODAL manually via DOM if bootstrap instance fails
+            const modalEl = document.getElementById('bookingModal');
+            const modal = bootstrap.Modal.getInstance(modalEl);
+            if (modal) modal.hide();
+            else modalEl.classList.remove('show'); // Fallback
+            
             loadAvailability(roomEmail); 
         } else {
-            // FIX: Ensure error is readable
             const err = await res.json();
             alert("Error: " + (err.detail || JSON.stringify(err)));
         }
-    } catch (e) { 
-        console.error("Booking Error:", e);
-        alert("Network Error: Check console for details."); 
-    }
+    } catch (e) { alert("Network Error: " + e.message); }
 }
 
-async function fetchRooms() { 
-    try { 
-        const res = await fetch(`${API_URL}/rooms`); 
-        const data = await res.json(); 
-        if (data.value) { 
-            availableRooms = data.value; 
-            const select = document.getElementById('roomSelect'); 
-            select.innerHTML = '<option value="" disabled selected>Select a room...</option>'; 
-            availableRooms.forEach((r, index) => { 
-                const opt = document.createElement('option'); 
-                opt.value = index; 
-                opt.textContent = `${r.displayName}  [ ${r.department} - ${r.floor} ]`; 
-                select.appendChild(opt); 
-            }); 
-        } 
-    } catch (e) { console.error(e); } 
-}
-
-// ... (Keep helpers: handleRoomChange, loadAvailability, handleBookClick, initModalTimes, renderTimeline) ...
+// ... (Helpers: handleRoomChange, loadAvailability, fetchRooms etc. same as before) ...
+async function fetchRooms() { try { const res = await fetch(`${API_URL}/rooms`); const data = await res.json(); if (data.value) { availableRooms = data.value; const select = document.getElementById('roomSelect'); select.innerHTML = '<option value="" disabled selected>Select a room...</option>'; availableRooms.forEach((r, index) => { const opt = document.createElement('option'); opt.value = index; opt.textContent = `${r.displayName}  [ ${r.department} - ${r.floor} ]`; select.appendChild(opt); }); } } catch (e) { console.error(e); } }
 function handleRoomChange() { const index = document.getElementById('roomSelect').value; const room = availableRooms[index]; if (room) { loadAvailability(room.emailAddress); checkForActiveMeeting(); } }
 async function loadAvailability(email) { if (!email) return; document.getElementById('loadingSpinner').style.display = "inline"; const now = new Date(); const viewStart = new Date(now); viewStart.setMinutes(0, 0, 0); const viewEnd = new Date(viewStart.getTime() + 12 * 60 * 60 * 1000); try { const res = await fetch(`${API_URL}/availability`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_email: email, start_time: viewStart.toISOString(), end_time: viewEnd.toISOString(), time_zone: "UTC" }) }); const data = await res.json(); renderTimeline(data, viewStart, viewEnd); } catch (err) { console.error(err); } finally { document.getElementById('loadingSpinner').style.display = "none"; } }
 function handleBookClick() { if(!username) { signIn(); return; } document.getElementById('displayEmail').value = username; new bootstrap.Modal(document.getElementById('bookingModal')).show(); }
