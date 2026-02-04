@@ -46,14 +46,14 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-start">
                         <div>
-                            <h5 class="card-title fw-bold mb-1">⚠️ Check-In Required</h5>
+                            <h5 class="card-title fw-bold mb-1" id="bannerStatusTitle">⚠️ Check-In Required</h5>
                             <div class="small mt-2">
                                 <div id="bannerSubject" class="fw-bold fs-5">...</div>
                                 <div class="text-muted">Booked by: <span id="bannerOrganizer">...</span></div>
                             </div>
                         </div>
                         <div class="text-end">
-                            <span class="badge bg-danger mb-1">DEADLINE</span>
+                            <span class="badge bg-danger mb-1" id="bannerBadge">DEADLINE</span>
                             <div class="display-6 fw-bold text-danger" id="checkInTimer">--:--</div>
                         </div>
                     </div>
@@ -81,7 +81,6 @@
         <div class="spinner-grow text-light mb-3" role="status"></div>
         <h1 class="display-1 fw-bold">⛔</h1>
         <h1 class="display-3 fw-bold">DO NOT DISTURB</h1>
-        
         <h2 id="overlaySubject" class="mt-4 text-warning fw-bold">--</h2>
         <h5 id="overlayOrganizer" class="fw-light opacity-75">--</h5>
         
@@ -109,7 +108,7 @@
             </div>
             <div class="modal-body">
                 <form id="bookingForm">
-                    <div class="mb-3"><label class="form-label fw-bold small">Business Unit / Filiale</label><input type="text" id="filiale" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label fw-bold small">Business Unit</label><input type="text" id="filiale" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label fw-bold small">Subject</label><input type="text" id="subject" class="form-control" required></div>
                     <div class="mb-3"><label class="form-label fw-bold small">Reason</label><textarea id="description" class="form-control" rows="2"></textarea></div>
                     <div class="mb-3"><label class="form-label fw-bold small">Invitees</label><input type="text" id="attendees" class="form-control"></div>
