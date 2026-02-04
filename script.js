@@ -2,8 +2,8 @@
 const API_URL = "https://booking-a-room-poc.onrender.com"; 
 const msalConfig = {
     auth: {
-        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8", // ⚠️ UPDATE THIS
-        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6", // ⚠️ UPDATE THIS
+        clientId: "0f759785-1ba8-449d-ba6f-9ba5e8f479d8",
+        authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6",
         redirectUri: window.location.origin, 
     },
     cache: { cacheLocation: "sessionStorage" }
@@ -18,9 +18,6 @@ let checkInCountdown = null;
 let meetingEndInterval = null;
 let sessionTimeout = null;
 let isAuthInProgress = false; 
-
-// 🛑 NEW: REMEMBERS WHAT YOU UNLOCKED TO PREVENT LOOPS
-let manuallyUnlockedEventId = null;
 
 // ================= INITIALIZATION =================
 document.addEventListener("DOMContentLoaded", async () => {
@@ -79,7 +76,6 @@ async function checkForActiveMeeting() {
             const start = new Date(event.start.dateTime + 'Z');
             const end = new Date(event.end.dateTime + 'Z');
 
-            // 1. Meeting Over?
             if (now >= end) {
                 banner.style.display = "none";
                 overlay.classList.add('d-none');
@@ -87,7 +83,6 @@ async function checkForActiveMeeting() {
                 return;
             }
 
-            // Downgrade Protection (Prevent Text Flicker)
             const incomingSubject = event.subject;
             const currentDisplayed = document.getElementById('bannerSubject').innerText;
             const incomingIsGood = incomingSubject && incomingSubject.includes(":");
@@ -96,27 +91,15 @@ async function checkForActiveMeeting() {
             if (incomingIsGood || !currentIsGood) {
                  document.getElementById('bannerSubject').textContent = incomingSubject;
             }
-            const orgName = event.organizer?.emailAddress?.name || "Unknown";
-            document.getElementById('bannerOrganizer').textContent = orgName;
+            document.getElementById('bannerOrganizer').textContent = event.organizer?.emailAddress?.name || "Unknown";
 
-            // 2. CHECKED IN STATE
             if (event.categories && event.categories.includes("Checked-In")) {
                  banner.style.display = "none";
                  stopCheckInCountdown();
-                 
-                 // 🛑 LOOP FIX: Only show Red Screen if we haven't manually unlocked THIS event
-                 if (overlay.classList.contains('d-none') && event.id !== manuallyUnlockedEventId) {
-                     showMeetingMode(event);
-                 }
+                 if (overlay.classList.contains('d-none')) showMeetingMode(event);
                  return;
             } 
             
-            // 3. WAITING STATE
-            // Reset unlock memory if we see a NEW, different meeting
-            if (event.id !== manuallyUnlockedEventId) {
-                manuallyUnlockedEventId = null;
-            }
-
             banner.style.display = "block";
             overlay.classList.add('d-none');
             const btn = document.getElementById('realCheckInBtn');
@@ -151,10 +134,9 @@ function startGenericCountdown(targetDate, elementId, expireText="00:00") {
         const timerEl = document.getElementById(elementId);
         if (distance < 0) { timerEl.textContent = expireText; } 
         else {
-            const h = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const s = Math.floor((distance % (1000 * 60)) / 1000);
-            timerEl.textContent = h > 0 ? `${h}h ${m}m` : `${m}m ${s}s`;
+            timerEl.textContent = `${m}m ${s}s`;
         }
     }, 1000);
 }
@@ -182,7 +164,6 @@ function showMeetingMode(event) {
     
     const safeSubject = document.getElementById('bannerSubject').textContent;
     document.getElementById('overlaySubject').textContent = safeSubject.includes(":") ? safeSubject : event.subject;
-    
     document.getElementById('overlayOrganizer').textContent = `Booked by: ${event.organizer?.emailAddress?.name}`;
     document.getElementById('overlayTime').textContent = `${start} - ${end}`;
     overlay.classList.remove('d-none');
@@ -208,10 +189,15 @@ function startMeetingEndTimer(endTimeStr) {
 }
 function stopMeetingEndTimer() { if (meetingEndInterval) clearInterval(meetingEndInterval); }
 
-async function secureExitMeetingMode() {
+// 🛑 END MEETING LOGIC (Replaces Unlock)
+async function secureEndMeeting() {
     if (isAuthInProgress) return;
     
     const organizerEmail = currentLockedEvent.organizer.emailAddress.address.toLowerCase();
+    const roomIndex = document.getElementById('roomSelect').value;
+    const roomEmail = availableRooms[roomIndex].emailAddress;
+    const eventId = currentLockedEvent.id;
+
     isAuthInProgress = true;
 
     try {
@@ -221,15 +207,25 @@ async function secureExitMeetingMode() {
         });
         
         const verifiedEmail = loginResp.account.username.toLowerCase();
+        
         if (verifiedEmail === organizerEmail) {
             
-            // 🛑 SAVE ID TO PREVENT RE-LOCKING
-            manuallyUnlockedEventId = currentLockedEvent.id;
-            
-            document.getElementById('meetingInProgressOverlay').classList.add('d-none');
-            currentLockedEvent = null; 
-            stopMeetingEndTimer(); 
-            checkForActiveMeeting();
+            // Call API to END the meeting
+            const res = await fetch(`${API_URL}/end-meeting`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
+            });
+
+            if (res.ok) {
+                // Success! Close screen and refresh
+                document.getElementById('meetingInProgressOverlay').classList.add('d-none');
+                currentLockedEvent = null; 
+                stopMeetingEndTimer(); 
+                checkForActiveMeeting(); // Will see meeting is gone/ended
+            } else {
+                alert("Error ending meeting. Please try again.");
+            }
             
         } else { alert(`⛔ ACCESS DENIED\nVerified: ${verifiedEmail}`); }
         
@@ -240,7 +236,7 @@ async function secureExitMeetingMode() {
     }
 }
 
-// ================= BOOKING (STYLED RECEIPT) =================
+// ================= BOOKING =================
 async function createBooking() {
     if (!username) return alert("Please sign in first.");
     const index = document.getElementById('roomSelect').value;
