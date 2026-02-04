@@ -10,7 +10,6 @@ const msalConfig = {
     cache: { cacheLocation: "sessionStorage" }
 };
 
-// 🔴 PERMISSION TO BOOK AS USER
 const loginRequest = {
     scopes: ["User.Read", "Calendars.ReadWrite"] 
 };
@@ -18,38 +17,55 @@ const loginRequest = {
 const msalInstance = new msal.PublicClientApplication(msalConfig);
 let username = ""; 
 let availableRooms = []; 
+let currentLockedEvent = null; // Stores event data for the Red Screen
+let countdownInterval = null;
+let sessionTimeout = null; // 🛑 2-MINUTE SESSION TIMER
 
 // ================= INITIALIZATION =================
 document.addEventListener("DOMContentLoaded", async () => {
     initModalTimes();
     await fetchRooms();
-    
-    // Ghost Buster / Check-In Watcher (Every 10 seconds)
-    setInterval(checkForActiveMeeting, 10000); 
+    setInterval(checkForActiveMeeting, 10000); // Poll every 10s
     
     try {
         await msalInstance.initialize();
+        // Check if user is returning from a login flow
         const response = await msalInstance.handleRedirectPromise();
         if (response) handleLoginSuccess(response.account);
-        else {
-            const accounts = msalInstance.getAllAccounts();
-            if (accounts.length > 0) handleLoginSuccess(accounts[0]);
-        }
     } catch (e) { console.error(e); }
 });
 
 async function signIn() { try { await msalInstance.loginRedirect(loginRequest); } catch (e) { console.error(e); } }
-function signOut() { msalInstance.logoutPopup(); }
+
+// 🛑 2-MINUTE AUTO-LOGOUT LOGIC
+function signOut() { 
+    // We don't necessarily call msal.logout() because that redirects the page.
+    // Instead, we just "Forget" the user locally to stop them from booking.
+    username = ""; 
+    document.getElementById("userWelcome").style.display="none"; 
+    document.getElementById("loginBtn").style.display="inline-block"; 
+    document.getElementById("logoutBtn").style.display="none"; 
+    
+    // Clear timer
+    if (sessionTimeout) clearTimeout(sessionTimeout);
+}
+
 function handleLoginSuccess(acc) { 
     username = acc.username; 
     document.getElementById("userWelcome").textContent = `👤 ${username}`; 
     document.getElementById("userWelcome").style.display="inline"; 
     document.getElementById("loginBtn").style.display="none"; 
     document.getElementById("logoutBtn").style.display="inline-block"; 
-    checkForActiveMeeting(); 
+    
+    // START 2-MINUTE TIMER
+    if (sessionTimeout) clearTimeout(sessionTimeout);
+    sessionTimeout = setTimeout(() => {
+        alert("Session Expired: You have been logged out of Booking Mode.");
+        signOut();
+    }, 2 * 60 * 1000); // 2 Minutes
 }
 
-// ================= CHECK-IN & RED SCREEN LOGIC =================
+// ================= CHECK-IN & RED SCREEN =================
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
@@ -58,38 +74,83 @@ async function checkForActiveMeeting() {
     try {
         const res = await fetch(`${API_URL}/active-meeting?room_email=${roomEmail}`);
         const event = await res.json();
-        const checkInBtn = document.getElementById('checkInBtn'); 
+        const banner = document.getElementById('checkInBanner');
         
         if (event) {
-            // IF CHECKED IN -> SHOW RED SCREEN
+            // CASE 1: ALREADY CHECKED IN -> Show Red Screen
             if (event.categories && event.categories.includes("Checked-In")) {
-                 checkInBtn.style.display = "none";
-                 showMeetingMode(event); 
-            } else {
-                 // IF NOT CHECKED IN -> SHOW BUTTON
-                 checkInBtn.style.display = "block";
-                 checkInBtn.onclick = () => performCheckIn(roomEmail, event.id, event);
-                 checkInBtn.textContent = `✅ CHECK IN: ${event.subject}`;
+                 banner.style.display = "none";
+                 stopCountdown(); 
+                 
+                 // If Red Screen isn't showing, SHOW IT and LOCK IT
+                 if (document.getElementById('meetingInProgressOverlay').classList.contains('d-none')) {
+                     showMeetingMode(event);
+                 }
+            } 
+            // CASE 2: WAITING FOR CHECK-IN (Public Mode)
+            else {
+                 banner.style.display = "block";
                  document.getElementById('meetingInProgressOverlay').classList.add('d-none');
+                 
+                 document.getElementById('bannerSubject').textContent = event.subject;
+                 document.getElementById('bannerOrganizer').textContent = event.organizer?.emailAddress?.name || "Unknown";
+                 
+                 // ANYONE can click this (No Auth Required)
+                 const btn = document.getElementById('realCheckInBtn');
+                 btn.onclick = () => performCheckIn(roomEmail, event.id, event);
+                 
+                 startCountdown(event.start.dateTime);
             }
         } else {
-            checkInBtn.style.display = "none";
+            banner.style.display = "none";
+            stopCountdown();
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
         }
     } catch (e) { console.error(e); }
 }
 
+function startCountdown(startTimeStr) {
+    if (countdownInterval) clearInterval(countdownInterval);
+    const startTime = new Date(startTimeStr + 'Z').getTime();
+    const deadline = startTime + (5 * 60 * 1000); // 5 Minutes
+
+    countdownInterval = setInterval(() => {
+        const now = new Date().getTime();
+        const distance = deadline - now;
+        const timerEl = document.getElementById('checkInTimer');
+
+        if (distance < 0) {
+            clearInterval(countdownInterval);
+            timerEl.textContent = "EXPIRED";
+        } else {
+            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+            timerEl.textContent = `${minutes}m ${seconds}s`;
+        }
+    }, 1000);
+}
+function stopCountdown() { if (countdownInterval) clearInterval(countdownInterval); }
+
 async function performCheckIn(roomEmail, eventId, eventDetails) {
-    const res = await fetch(`${API_URL}/checkin`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
-    });
-    if (res.ok) showMeetingMode(eventDetails);
-    else alert("Check-in failed.");
+    // PUBLIC ACTION: Does not use 'username' or user token. 
+    // Uses Backend System Token.
+    stopCountdown();
+    document.getElementById('checkInBanner').style.display = "none";
+    
+    try {
+        const res = await fetch(`${API_URL}/checkin`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
+        });
+        if (res.ok) showMeetingMode(eventDetails);
+        else { alert("Check-in failed."); checkForActiveMeeting(); }
+    } catch (e) { alert(e.message); }
 }
 
+// ================= SECURE UNLOCK LOGIC =================
 function showMeetingMode(event) {
+    currentLockedEvent = event; // Save data for verification
     const overlay = document.getElementById('meetingInProgressOverlay');
     const start = new Date(event.start.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     const end = new Date(event.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
@@ -98,16 +159,49 @@ function showMeetingMode(event) {
     overlay.classList.remove('d-none');
 }
 
-function exitMeetingMode() {
-    document.getElementById('meetingInProgressOverlay').classList.add('d-none');
-    checkForActiveMeeting();
+async function secureExitMeetingMode() {
+    // 🛑 FORCE RE-VERIFICATION
+    // We do NOT use acquireTokenSilent here. We force a popup.
+    
+    const organizerEmail = currentLockedEvent.organizer.emailAddress.address.toLowerCase();
+    
+    try {
+        // 'prompt: login' forces the user to enter credentials again
+        // ignoring any active session cookies.
+        const loginResp = await msalInstance.loginPopup({
+            scopes: ["User.Read"],
+            prompt: "login" 
+        });
+
+        const verifiedEmail = loginResp.account.username.toLowerCase();
+
+        console.log(`Verifying: ${verifiedEmail} vs ${organizerEmail}`);
+
+        if (verifiedEmail === organizerEmail) {
+            // ✅ SUCCESS
+            document.getElementById('meetingInProgressOverlay').classList.add('d-none');
+            currentLockedEvent = null;
+            checkForActiveMeeting();
+        } else {
+            // ⛔ FAIL
+            alert(`⛔ ACCESS DENIED\n\nYou authenticated as: ${verifiedEmail}\nBut the meeting belongs to: ${organizerEmail}`);
+        }
+
+    } catch (e) {
+        console.error(e);
+        alert("Verification cancelled. Screen remains locked.");
+    }
 }
 
 // ================= BOOKING LOGIC =================
 async function createBooking() {
+    if (!username) return alert("Session Expired. Please sign in again to book.");
+    
     const index = document.getElementById('roomSelect').value;
     if (!index) return alert("Select a room.");
     const roomEmail = availableRooms[index].emailAddress;
+    
+    // ... (Get other form values) ...
     const subject = document.getElementById('subject').value;
     const filiale = document.getElementById('filiale').value; 
     const desc = document.getElementById('description').value;
@@ -116,23 +210,23 @@ async function createBooking() {
     const attendeesRaw = document.getElementById('attendees').value;
     let attendeeList = attendeesRaw.trim() ? attendeesRaw.split(',').map(e => e.trim()) : [];
 
-    if (!username) return alert("Please sign in first.");
-    if (!filiale) return alert("Please enter the Filiale name.");
-
-    // 1. Get User Token
+    // Get Token
     let accessToken = "";
     try {
         const account = msalInstance.getAllAccounts()[0];
         const tokenResp = await msalInstance.acquireTokenSilent({ ...loginRequest, account: account });
         accessToken = tokenResp.accessToken;
     } catch (e) {
+        // If silent fails, ask for login (refresh session)
         try {
             const tokenResp = await msalInstance.acquireTokenPopup(loginRequest);
             accessToken = tokenResp.accessToken;
+            // Refresh our local session timer
+            handleLoginSuccess(tokenResp.account);
         } catch (err) { return alert("Permission denied."); }
     }
 
-    // 2. Send to Backend
+    // Call Backend
     try {
         const res = await fetch(`${API_URL}/book`, {
             method: 'POST',
@@ -145,11 +239,7 @@ async function createBooking() {
         });
         
         if (res.ok) {
-            const startTimeFormatted = new Date(startInput).toLocaleString();
-            const endTimeFormatted = new Date(endInput).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
-            const inviteesMsg = attendeeList.length > 0 ? attendeeList.join(", ") : "None";
-
-            alert(`✅ BOOKING CONFIRMED\n\n📅 Time: ${startTimeFormatted} - ${endTimeFormatted}\n🏢 Unit: ${filiale}\n📝 Subject: ${subject}\n💡 Reason: ${desc || "N/A"}\n👥 Invitees: ${inviteesMsg}\n\nThe meeting has been added to your calendar.`);
+            alert(`✅ Booking Confirmed!`);
             bootstrap.Modal.getInstance(document.getElementById('bookingModal')).hide();
             loadAvailability(roomEmail); 
         } else {
@@ -159,10 +249,8 @@ async function createBooking() {
     } catch (e) { alert("Network Error: " + e.message); }
 }
 
-// ================= HELPERS =================
-async function fetchRooms() { 
-    try { const res = await fetch(`${API_URL}/rooms`); const data = await res.json(); if (data.value) { availableRooms = data.value; const select = document.getElementById('roomSelect'); select.innerHTML = '<option value="" disabled selected>Select a room...</option>'; availableRooms.forEach((r, index) => { const opt = document.createElement('option'); opt.value = index; opt.textContent = `${r.displayName}  [ ${r.department} - ${r.floor} ]`; select.appendChild(opt); }); } } catch (e) { console.error("Fetch Rooms Error:", e); } 
-}
+// ================= HELPERS (Same as before) =================
+async function fetchRooms() { try { const res = await fetch(`${API_URL}/rooms`); const data = await res.json(); if (data.value) { availableRooms = data.value; const select = document.getElementById('roomSelect'); select.innerHTML = '<option value="" disabled selected>Select a room...</option>'; availableRooms.forEach((r, index) => { const opt = document.createElement('option'); opt.value = index; opt.textContent = `${r.displayName}`; select.appendChild(opt); }); } } catch (e) { console.error(e); } }
 function handleRoomChange() { const index = document.getElementById('roomSelect').value; const room = availableRooms[index]; if (room) { loadAvailability(room.emailAddress); checkForActiveMeeting(); } }
 async function loadAvailability(email) { if (!email) return; document.getElementById('loadingSpinner').style.display = "inline"; const now = new Date(); const viewStart = new Date(now); viewStart.setMinutes(0, 0, 0); const viewEnd = new Date(viewStart.getTime() + 12 * 60 * 60 * 1000); try { const res = await fetch(`${API_URL}/availability`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ room_email: email, start_time: viewStart.toISOString(), end_time: viewEnd.toISOString(), time_zone: "UTC" }) }); const data = await res.json(); renderTimeline(data, viewStart, viewEnd); } catch (err) { console.error(err); } finally { document.getElementById('loadingSpinner').style.display = "none"; } }
 function handleBookClick() { if(!username) { signIn(); return; } document.getElementById('displayEmail').value = username; new bootstrap.Modal(document.getElementById('bookingModal')).show(); }
