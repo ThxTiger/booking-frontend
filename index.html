@@ -10,6 +10,11 @@
 </head>
 <body>
 
+<div id="timelineTooltip">
+    <div id="tooltipSubject"></div>
+    <div id="tooltipTime"></div>
+</div>
+
 <div class="container py-4">
     <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
         <div class="d-flex align-items-center gap-4">
@@ -82,7 +87,6 @@
         <div class="spinner-grow text-light mb-3" role="status"></div>
         <h1 class="display-1 fw-bold">⛔</h1>
         <h1 class="display-3 fw-bold">DO NOT DISTURB</h1>
-        
         <h2 id="overlaySubject" class="mt-4 text-warning fw-bold">--</h2>
         <h5 id="overlayOrganizer" class="fw-light opacity-75">--</h5>
         
@@ -110,42 +114,18 @@
             </div>
             <div class="modal-body">
                 <form id="bookingForm">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small">Business Unit / Filiale</label>
-                        <input type="text" id="filiale" class="form-control" placeholder="e.g. Axians, Cegelec..." required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small">Meeting Subject</label>
-                        <input type="text" id="subject" class="form-control" required>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small">Description / Reason</label>
-                        <textarea id="description" class="form-control" rows="2"></textarea>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small">Invite Colleagues (Optional)</label>
-                        <input type="text" id="attendees" class="form-control" placeholder="bob@axians.com...">
-                    </div>
-                    
+                    <div class="mb-3"><label class="form-label fw-bold small">Business Unit / Filiale</label><input type="text" id="filiale" class="form-control" placeholder="e.g. Axians..." required></div>
+                    <div class="mb-3"><label class="form-label fw-bold small">Subject</label><input type="text" id="subject" class="form-control" required></div>
+                    <div class="mb-3"><label class="form-label fw-bold small">Reason</label><textarea id="description" class="form-control" rows="2"></textarea></div>
+                    <div class="mb-3"><label class="form-label fw-bold small">Invitees</label><input type="text" id="attendees" class="form-control" placeholder="bob@axians.com..."></div>
                     <div class="row">
-                        <div class="col-6 mb-3">
-                            <label class="form-label fw-bold small">Start Time</label>
-                            <input type="datetime-local" id="startTime" class="form-control" required>
-                        </div>
-                        <div class="col-6 mb-3">
-                            <label class="form-label fw-bold small">End Time</label>
-                            <input type="datetime-local" id="endTime" class="form-control" required>
-                        </div>
+                        <div class="col-6 mb-3"><label class="form-label fw-bold small">Start Time</label><input type="datetime-local" id="startTime" class="form-control" required></div>
+                        <div class="col-6 mb-3"><label class="form-label fw-bold small">End Time</label><input type="datetime-local" id="endTime" class="form-control" required></div>
                     </div>
-
                     <div class="mb-2">
                         <label class="form-label fw-bold small">Organizer</label>
                         <input type="text" id="displayEmail" class="form-control bg-light form-control-sm" readonly>
                     </div>
-
                 </form>
             </div>
             <div class="modal-footer">
@@ -158,6 +138,5 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script src="script.js"></script>
-
 </body>
 </html>
