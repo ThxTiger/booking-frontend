@@ -24,7 +24,7 @@ let manuallyUnlockedEventId = null;
 document.addEventListener("DOMContentLoaded", async () => {
     initModalTimes();
     await fetchRooms();
-    setInterval(checkForActiveMeeting, 5000); 
+    setInterval(checkForActiveMeeting, 5000); // Poll every 5 seconds
     
     try {
         await msalInstance.initialize();
@@ -59,108 +59,129 @@ function handleLoginSuccess(acc) {
     sessionTimeout = setTimeout(() => { alert("Session Expired."); signOut(); }, 120000);
 }
 
-// ================= CHECK-IN LOGIC =================
+// ================= CORE LOGIC (BUG FIXES HERE) =================
+
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
     const roomEmail = availableRooms[index].emailAddress;
 
     try {
+        // Fetch the CURRENT or NEXT meeting from backend
         const res = await fetch(`${API_URL}/active-meeting?room_email=${roomEmail}`);
         let event = await res.json();
         
         const banner = document.getElementById('checkInBanner');
         const overlay = document.getElementById('meetingInProgressOverlay');
 
-        if (event) {
-            const now = new Date();
-            const end = new Date(event.end.dateTime + 'Z');
-
-            if (now >= end) {
-                banner.style.display = "none";
-                overlay.classList.add('d-none');
-                stopCheckInCountdown(); stopMeetingEndTimer();
-                return;
-            }
-
-            // 🛠️ AUTO-REPAIR LOGIC (ROBUST VERSION) 🛠️
-            const organizerName = event.organizer?.emailAddress?.name || "Unknown";
-            const cleanSubject = (event.subject || "").trim().toLowerCase();
-            const cleanOrg = organizerName.trim().toLowerCase();
-
-            // CHECK: Is the subject basically just the organizer's name?
-            if (cleanSubject === cleanOrg || cleanSubject.includes(cleanOrg)) {
-                
-                console.log("⚠️ Bad Subject Detected. Attempting Repair...");
-
-                // 1. Try to recover from the UI (if we fixed it before)
-                const currentScreenSubject = document.getElementById('bannerSubject').innerText;
-                if (currentScreenSubject.includes(":")) {
-                    event.subject = currentScreenSubject;
-                } 
-                // 2. Try to parse the Body Preview
-                else if (event.bodyPreview) {
-                    // Try to find "Filiale:" and "Reason:" loosely
-                    // Matches "Filiale: Something" or "Filiale : Something"
-                    const filialeMatch = event.bodyPreview.match(/Filiale\s*:\s*(.*?)(Reason|Subject|$)/i);
-                    const reasonMatch = event.bodyPreview.match(/Reason\s*:\s*(.*)/i);
-                    
-                    if (filialeMatch && filialeMatch[1]) {
-                        const f = filialeMatch[1].trim();
-                        const r = reasonMatch && reasonMatch[1] ? reasonMatch[1].trim().substring(0, 40) + "..." : "Meeting";
-                        event.subject = `${f} : ${r}`;
-                    } else {
-                        // 3. Fallback: Just grab the first chunk of text from the body
-                        const fallbackText = event.bodyPreview.substring(0, 50).replace(/\n/g, " ");
-                        if (fallbackText.length > 5) {
-                            event.subject = `Meeting : ${fallbackText}...`;
-                        }
-                    }
-                }
-            }
-
-            // UPDATE UI
-            document.getElementById('bannerSubject').textContent = event.subject;
-            document.getElementById('bannerOrganizer').textContent = organizerName;
-
-            // 2. CHECKED IN STATE
-            if (event.categories && event.categories.includes("Checked-In")) {
-                 banner.style.display = "none";
-                 stopCheckInCountdown();
-                 if (overlay.classList.contains('d-none') && event.id !== manuallyUnlockedEventId) {
-                     showMeetingMode(event);
-                 }
-                 return;
-            } 
-            
-            // 3. WAITING STATE
-            if (event.id !== manuallyUnlockedEventId) manuallyUnlockedEventId = null;
-
-            banner.style.display = "block";
-            overlay.classList.add('d-none');
-            const btn = document.getElementById('realCheckInBtn');
-            btn.onclick = () => performCheckIn(roomEmail, event.id, event);
-
-            const start = new Date(event.start.dateTime + 'Z');
-            const minsUntil = Math.floor((start - now) / 60000);
-            
-            if (minsUntil > 15) {
-                document.getElementById('bannerStatusTitle').textContent = "📅 Next Meeting";
-                document.getElementById('bannerBadge').className = "badge bg-info mb-1";
-                document.getElementById('bannerBadge').textContent = "STARTS IN";
-                startGenericCountdown(start, "checkInTimer");
-            } else {
-                document.getElementById('bannerStatusTitle').textContent = "⚠️ Meeting Started! Check In or Auto-Cancel";
-                document.getElementById('bannerBadge').className = "badge bg-danger mb-1";
-                document.getElementById('bannerBadge').textContent = "DEADLINE";
-                const deadline = new Date(start.getTime() + 5*60000); 
-                startGenericCountdown(deadline, "checkInTimer", "EXPIRED");
-            }
-        } else {
+        // CASE 1: NO MEETING FOUND
+        if (!event) {
             banner.style.display = "none";
             overlay.classList.add('d-none');
             stopCheckInCountdown(); stopMeetingEndTimer();
+            return;
         }
+
+        const now = new Date();
+        const start = new Date(event.start.dateTime + 'Z');
+        const end = new Date(event.end.dateTime + 'Z');
+
+        // CASE 2: MEETING ENDED (Double check to be safe)
+        if (now >= end) {
+            banner.style.display = "none";
+            overlay.classList.add('d-none');
+            return;
+        }
+
+        // --- 🛠️ AUTO-REPAIR LOGIC (THE NAME FIXER) 🛠️ ---
+        const organizerName = event.organizer?.emailAddress?.name || "Unknown";
+        let cleanSubject = (event.subject || "").trim();
+        const cleanOrg = organizerName.trim();
+
+        // Check if Outlook overwrote the subject with the organizer's name
+        if (cleanSubject.toLowerCase() === cleanOrg.toLowerCase() || cleanSubject === "") {
+            console.log("⚠️ Corrupted Subject Detected. Fixing...");
+            
+            // Try to find "Filiale :" inside the body preview
+            if (event.bodyPreview) {
+                const filialeMatch = event.bodyPreview.match(/Filiale\s*:\s*(.*?)(\n|$|Reason)/i);
+                if (filialeMatch && filialeMatch[1]) {
+                    event.subject = filialeMatch[1].trim(); 
+                } else if (event.bodyPreview.length > 5) {
+                    // Fallback: use first 40 chars of body
+                    event.subject = event.bodyPreview.substring(0, 40) + "...";
+                } else {
+                    event.subject = "Private Meeting";
+                }
+            } else {
+                event.subject = "Private Meeting";
+            }
+        }
+        
+        // Update Variables
+        document.getElementById('bannerSubject').textContent = event.subject;
+        document.getElementById('bannerOrganizer').textContent = organizerName;
+
+        // --- 🚥 LOGIC BRANCHING: FUTURE vs ACTIVE 🚥 ---
+
+        // CASE 3: FUTURE MEETING (Upcoming)
+        // BUG FIX: Strictly check if Now < Start
+        if (now < start) {
+            // Setup Blue Banner (Info Mode)
+            banner.style.display = "block";
+            overlay.classList.add('d-none'); // Ensure Red Screen is hidden
+            
+            // UI: "STARTS IN"
+            document.getElementById('bannerStatusTitle').textContent = "📅 Next Meeting";
+            const badge = document.getElementById('bannerBadge');
+            badge.className = "badge bg-info mb-1";
+            badge.textContent = "STARTS IN";
+            
+            // Hide Check-in Button (Can't check in yet)
+            document.getElementById('realCheckInBtn').style.display = "none";
+            
+            // Start Countdown to START TIME
+            startGenericCountdown(start, "checkInTimer", "STARTING...");
+            return; 
+        }
+
+        // CASE 4: ACTIVE MEETING (Happening Now)
+        // (now >= start && now < end)
+
+        // 4A: ALREADY CHECKED IN?
+        if (event.categories && event.categories.includes("Checked-In")) {
+             banner.style.display = "none"; // Hide Yellow/Blue Banner
+             stopCheckInCountdown();
+             
+             // Show Red Overlay (Do Not Disturb)
+             if (overlay.classList.contains('d-none') && event.id !== manuallyUnlockedEventId) {
+                 showMeetingMode(event);
+             }
+             return;
+        } 
+        
+        // 4B: NOT CHECKED IN (Ghost Buster Danger Zone)
+        // Show Yellow Banner
+        if (event.id !== manuallyUnlockedEventId) manuallyUnlockedEventId = null;
+
+        banner.style.display = "block";
+        overlay.classList.add('d-none'); 
+        
+        // UI: "DEADLINE"
+        document.getElementById('bannerStatusTitle').textContent = "⚠️ Meeting Started! Confirm Presence";
+        const badge = document.getElementById('bannerBadge');
+        badge.className = "badge bg-danger mb-1";
+        badge.textContent = "AUTO-CANCEL IN";
+
+        // Show Check-In Button
+        const btn = document.getElementById('realCheckInBtn');
+        btn.style.display = "inline-block";
+        btn.onclick = () => performCheckIn(roomEmail, event.id, event);
+
+        // Timer: 5 Minutes from Start Time
+        const deadline = new Date(start.getTime() + 5*60000); 
+        startGenericCountdown(deadline, "checkInTimer", "EXPIRED");
+
     } catch (e) { console.error(e); }
 }
 
@@ -170,14 +191,17 @@ function startGenericCountdown(targetDate, elementId, expireText="00:00") {
         const now = new Date().getTime();
         const distance = targetDate.getTime() - now;
         const timerEl = document.getElementById(elementId);
-        if (distance < 0) { timerEl.textContent = expireText; } 
-        else {
+        
+        if (distance < 0) { 
+            timerEl.textContent = expireText; 
+        } else {
             const m = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
             const s = Math.floor((distance % (1000 * 60)) / 1000);
             timerEl.textContent = `${m}m ${s}s`;
         }
     }, 1000);
 }
+
 function stopCheckInCountdown() { if (checkInCountdown) clearInterval(checkInCountdown); }
 
 async function performCheckIn(roomEmail, eventId, eventDetails) {
@@ -200,12 +224,12 @@ function showMeetingMode(event) {
     const start = new Date(event.start.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     const end = new Date(event.end.dateTime + 'Z').toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
     
-    // Ensure we use the repaired subject if available
+    // UI Update
     const safeSubject = document.getElementById('bannerSubject').textContent;
-    document.getElementById('overlaySubject').textContent = safeSubject.includes(":") ? safeSubject : event.subject;
-    
+    document.getElementById('overlaySubject').textContent = safeSubject; // Use the repaired subject
     document.getElementById('overlayOrganizer').textContent = `Booked by: ${event.organizer?.emailAddress?.name}`;
     document.getElementById('overlayTime').textContent = `${start} - ${end}`;
+    
     overlay.classList.remove('d-none');
     startMeetingEndTimer(event.end.dateTime);
 }
@@ -272,7 +296,8 @@ async function secureEndMeeting() {
     }
 }
 
-// ================= BOOKING =================
+// ================= BOOKING & TIMELINE (EXISTING CODE) =================
+
 async function createBooking() {
     if (!username) return alert("Please sign in first.");
     const index = document.getElementById('roomSelect').value;
@@ -353,6 +378,7 @@ async function fetchRooms() {
         } 
     } catch (e) { console.error(e); } 
 }
+
 function handleRoomChange() { 
     const index = document.getElementById('roomSelect').value; 
     const room = availableRooms[index]; 
@@ -361,6 +387,7 @@ function handleRoomChange() {
         checkForActiveMeeting(); 
     } 
 }
+
 async function loadAvailability(email) { 
     if (!email) return; 
     document.getElementById('loadingSpinner').style.display = "inline"; 
@@ -386,11 +413,13 @@ async function loadAvailability(email) {
     } catch (err) { console.error(err); } 
     finally { document.getElementById('loadingSpinner').style.display = "none"; } 
 }
+
 function handleBookClick() { 
     if(!username) { signIn(); return; } 
     document.getElementById('displayEmail').value = username; 
     new bootstrap.Modal(document.getElementById('bookingModal')).show(); 
 }
+
 function initModalTimes() { 
     const now = new Date(); 
     now.setMinutes(now.getMinutes()-now.getTimezoneOffset()); 
@@ -398,6 +427,7 @@ function initModalTimes() {
     now.setMinutes(now.getMinutes()+30); 
     document.getElementById('endTime').value = now.toISOString().slice(0,16); 
 }
+
 function renderTimeline(data, viewStart, viewEnd) { 
     const timelineContainer = document.getElementById('timeline'); 
     timelineContainer.innerHTML = ''; 
@@ -444,6 +474,7 @@ function renderTimeline(data, viewStart, viewEnd) {
     } 
     timelineContainer.appendChild(track); 
 }
+
 function showTooltip(e, item) {
     const tooltip = document.getElementById('timelineTooltip');
     const subject = item.subject || "Private Meeting";
@@ -454,9 +485,11 @@ function showTooltip(e, item) {
     tooltip.style.display = 'block';
     moveTooltip(e);
 }
+
 function moveTooltip(e) {
     const tooltip = document.getElementById('timelineTooltip');
     tooltip.style.left = (e.pageX + 15) + 'px';
     tooltip.style.top = (e.pageY + 15) + 'px';
 }
+
 function hideTooltip() { document.getElementById('timelineTooltip').style.display = 'none'; }
