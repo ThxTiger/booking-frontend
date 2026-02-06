@@ -9,7 +9,9 @@ const msalConfig = {
     cache: { cacheLocation: "sessionStorage" }
 };
 const loginRequest = { scopes: ["User.Read", "Calendars.ReadWrite"] };
-const msalInstance = new msal.PublicClientApplication(msalConfig);
+
+// 🛠️ FIX 1: Renamed this from 'msalInstance' to 'myMSALObj' to match your other functions
+const myMSALObj = new msal.PublicClientApplication(msalConfig);
 
 let username = ""; 
 let availableRooms = []; 
@@ -27,8 +29,9 @@ document.addEventListener("DOMContentLoaded", async () => {
     setInterval(checkForActiveMeeting, 5000); // Poll every 5 seconds
     
     try {
-        await msalInstance.initialize();
-        const response = await msalInstance.handleRedirectPromise();
+        // 🛠️ FIX 2: Updated these to use 'myMSALObj'
+        await myMSALObj.initialize();
+        const response = await myMSALObj.handleRedirectPromise();
         if (response) handleLoginSuccess(response.account);
     } catch (e) { console.error(e); }
 });
@@ -36,7 +39,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 async function signIn() { 
     if(isAuthInProgress) return;
     isAuthInProgress = true;
-    try { await msalInstance.loginRedirect(loginRequest); } 
+    try { 
+        // 🛠️ FIX 3: Updated to use 'myMSALObj'
+        await myMSALObj.loginRedirect(loginRequest); 
+    } 
     catch (e) { console.error(e); } 
     finally { isAuthInProgress = false; }
 }
@@ -59,7 +65,7 @@ function handleLoginSuccess(acc) {
     sessionTimeout = setTimeout(() => { alert("Session Expired."); signOut(); }, 120000);
 }
 
-// ================= CORE LOGIC (BUG FIXES HERE) =================
+// ================= CORE LOGIC =================
 
 // --- 🔒 SECURITY HELPER: Get the Digital ID Card ---
 async function getAuthToken() {
@@ -225,24 +231,6 @@ async function checkForActiveMeeting() {
 
     } catch (e) { console.error(e); }
 }
-async function getAuthToken() {
-    const account = myMSALObj.getAllAccounts()[0];
-    if (!account) return null;
-
-    const request = {
-        scopes: ["User.Read"],
-        account: account
-    };
-
-    try {
-        const response = await myMSALObj.acquireTokenSilent(request);
-        return response.accessToken;
-    } catch (error) {
-        // If silent fails, user might need to log in again
-        console.error("Token silent failed", error);
-        return null;
-    }
-}
 
 function startGenericCountdown(targetDate, elementId, expireText="00:00") {
     if (checkInCountdown) clearInterval(checkInCountdown);
@@ -323,7 +311,7 @@ async function secureEndMeeting() {
     isAuthInProgress = true;
 
     try {
-        const loginResp = await msalInstance.loginPopup({ 
+        const loginResp = await myMSALObj.loginPopup({ 
             scopes: ["User.Read"], 
             prompt: "login" 
         });
@@ -355,7 +343,7 @@ async function secureEndMeeting() {
     }
 }
 
-// ================= BOOKING & TIMELINE (EXISTING CODE) =================
+// ================= BOOKING & TIMELINE =================
 
 async function createBooking() {
     if (!username) return alert("Please sign in first.");
@@ -373,12 +361,12 @@ async function createBooking() {
 
     let accessToken = "";
     try {
-        const account = msalInstance.getAllAccounts()[0];
-        const tokenResp = await msalInstance.acquireTokenSilent({ ...loginRequest, account: account });
+        const account = myMSALObj.getAllAccounts()[0];
+        const tokenResp = await myMSALObj.acquireTokenSilent({ ...loginRequest, account: account });
         accessToken = tokenResp.accessToken;
     } catch (e) {
         try {
-            const tokenResp = await msalInstance.acquireTokenPopup(loginRequest);
+            const tokenResp = await myMSALObj.acquireTokenPopup(loginRequest);
             accessToken = tokenResp.accessToken;
             handleLoginSuccess(tokenResp.account);
         } catch (err) { return alert("Permission denied."); }
