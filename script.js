@@ -61,14 +61,55 @@ function handleLoginSuccess(acc) {
 
 // ================= CORE LOGIC (BUG FIXES HERE) =================
 
+// --- 🔒 SECURITY HELPER: Get the Digital ID Card ---
+async function getAuthToken() {
+    try {
+        // 1. Check if a user is signed in
+        const account = myMSALObj.getAllAccounts()[0];
+        if (!account) {
+            console.warn("⚠️ No user signed in. Cannot fetch secure data.");
+            return null;
+        }
+
+        // 2. Ask Microsoft for the token silently
+        const request = {
+            scopes: ["User.Read"],
+            account: account
+        };
+        const response = await myMSALObj.acquireTokenSilent(request);
+        return response.accessToken;
+
+    } catch (error) {
+        console.error("❌ Token Fetch Failed:", error);
+        return null;
+    }
+}
+
+// --- 🔄 MAIN FUNCTION: Check for Meetings ---
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
     const roomEmail = availableRooms[index].emailAddress;
 
     try {
-        // Fetch the CURRENT or NEXT meeting from backend
-        const res = await fetch(`${API_URL}/active-meeting?room_email=${roomEmail}`);
+        // 🔒 STEP 1: GET THE TOKEN
+        const token = await getAuthToken();
+        
+        if (!token) {
+            console.log("Waiting for login..."); 
+            return; // Stop if we don't have an ID card yet
+        }
+
+        // 🔒 STEP 2: SEND TOKEN TO BACKEND (Modified Fetch)
+        const res = await fetch(`${API_URL}/active-meeting?room_email=${roomEmail}`, {
+            method: "GET",
+            headers: {
+                "Authorization": `Bearer ${token}`,  // <--- THE KEY CHANGE
+                "Content-Type": "application/json"
+            }
+        });
+
+        // (The rest of your logic remains exactly the same)
         let event = await res.json();
         
         const banner = document.getElementById('checkInBanner');
