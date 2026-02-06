@@ -184,6 +184,24 @@ async function checkForActiveMeeting() {
 
     } catch (e) { console.error(e); }
 }
+async function getAuthToken() {
+    const account = myMSALObj.getAllAccounts()[0];
+    if (!account) return null;
+
+    const request = {
+        scopes: ["User.Read"],
+        account: account
+    };
+
+    try {
+        const response = await myMSALObj.acquireTokenSilent(request);
+        return response.accessToken;
+    } catch (error) {
+        // If silent fails, user might need to log in again
+        console.error("Token silent failed", error);
+        return null;
+    }
+}
 
 function startGenericCountdown(targetDate, elementId, expireText="00:00") {
     if (checkInCountdown) clearInterval(checkInCountdown);
