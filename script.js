@@ -325,33 +325,68 @@ function startMeetingEndTimer(endTimeStr) {
 }
 function stopMeetingEndTimer() { if (meetingEndInterval) clearInterval(meetingEndInterval); }
 
+// 🔒 SECURE END MEETING: Only Organizer or Invitees 🔒
 async function secureEndMeeting() {
     if (isAuthInProgress) return;
-    const organizerEmail = currentLockedEvent.organizer.emailAddress.address.toLowerCase();
+    
+    // 1. Prepare Allowed List (Organizer + Attendees)
+    const organizerEmail = currentLockedEvent.organizer?.emailAddress?.address?.toLowerCase() || "";
+    const attendees = currentLockedEvent.attendees || [];
+    
+    // Create the list of authorized emails
+    const allowedEmails = attendees.map(a => a.emailAddress?.address?.toLowerCase());
+    allowedEmails.push(organizerEmail); // Add organizer to the list
+
     const roomIndex = document.getElementById('roomSelect').value;
     const roomEmail = availableRooms[roomIndex].emailAddress;
     const eventId = currentLockedEvent.id;
 
     isAuthInProgress = true;
+
     try {
-        const loginResp = await myMSALObj.loginPopup({ scopes: ["User.Read"], prompt: "login" });
-        const verifiedEmail = loginResp.account.username.toLowerCase();
+        // 2. Force Popup Authentication (Same as Check-In)
+        const loginResp = await myMSALObj.loginPopup({
+            scopes: ["User.Read"],
+            prompt: "select_account"
+        });
         
-        if (verifiedEmail === organizerEmail) {
-            const res = await fetch(`${API_URL}/end-meeting`, {
-                method: 'POST', headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
-            });
-            if (res.ok) {
-                manuallyUnlockedEventId = eventId;
-                document.getElementById('meetingInProgressOverlay').classList.add('d-none');
-                currentLockedEvent = null; 
-                stopMeetingEndTimer(); 
-                checkForActiveMeeting();
-            } else { alert("Error ending meeting."); }
-        } else { alert(`⛔ ACCESS DENIED\nVerified: ${verifiedEmail}`); }
-    } catch (e) { if (e.errorCode !== "user_cancelled") alert("Authentication failed."); } 
-    finally { isAuthInProgress = false; }
+        const userEmail = loginResp.account.username.toLowerCase();
+        
+        // 3. Verify Identity
+        if (!allowedEmails.includes(userEmail)) {
+            alert(`⛔ ACCESS DENIED\n\nYou (${userEmail}) are not authorized to end this meeting.`);
+            return;
+        }
+
+        // 4. Identity Confirmed -> Call Backend
+        const res = await fetch(`${API_URL}/end-meeting`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                // We send the token to prove identity (Good practice)
+                'Authorization': `Bearer ${await getAuthToken()}` 
+            },
+            body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
+        });
+
+        if (res.ok) {
+            // Success! Unlock the screen immediately
+            manuallyUnlockedEventId = eventId;
+            document.getElementById('meetingInProgressOverlay').classList.add('d-none');
+            currentLockedEvent = null; 
+            stopMeetingEndTimer(); 
+            
+            // Refresh to show the room is now Green/Free
+            checkForActiveMeeting();
+        } else {
+            alert("Error ending meeting. Please try again.");
+        }
+        
+    } catch (e) { 
+        if (e.errorCode !== "user_cancelled") alert("Authentication failed."); 
+    } finally {
+        isAuthInProgress = false;
+    }
 }
 
 // ================= BOOKING & TIMELINE =================
