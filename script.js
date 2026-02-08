@@ -45,7 +45,7 @@ async function signIn() {
     finally { isAuthInProgress = false; }
 }
 
-// 🛠️ UPDATE 1: Data Wiping on Sign Out
+// 🛠️ UPDATE 1: Data Wiping on Sign Out (Silent)
 function signOut() { 
     username = ""; 
     
@@ -70,14 +70,23 @@ function signOut() {
     checkForActiveMeeting();
 }
 
+// 🛠️ UPDATE 2: Silent Session Expiry (No Alert)
 function handleLoginSuccess(acc) { 
     username = acc.username; 
     document.getElementById("userWelcome").textContent = `👤 ${username}`; 
     document.getElementById("userWelcome").style.display="inline"; 
     document.getElementById("loginBtn").style.display="none"; 
     document.getElementById("logoutBtn").style.display="inline-block"; 
+    
+    // Clear old timer
     if(sessionTimeout) clearTimeout(sessionTimeout);
-    sessionTimeout = setTimeout(() => { alert("Session Expired."); signOut(); }, 120000);
+    
+    // Start Silent Timer (2 Minutes)
+    // When this fires, it just wipes the screen. No popup.
+    sessionTimeout = setTimeout(() => { 
+        console.log("Session timed out. Locking Kiosk."); 
+        signOut(); 
+    }, 120000); 
 }
 
 // ================= CORE LOGIC =================
@@ -107,7 +116,6 @@ async function getAuthToken() {
 }
 
 // --- 🔄 MAIN FUNCTION: Check for Meetings ---
-// 🛠️ UPDATE 2: Enable Kiosk Mode (Run without token)
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
@@ -402,16 +410,18 @@ async function createBooking() {
                 `✅ BOOKING CONFIRMED\n\n` +
                 `📅 Time: ${startFmt} - ${endFmt}\n` +
                 `🏢 Unit: ${filiale}\n` +
-                `📝 Subject: ${subject}\n` +
-                `💡 Reason: ${desc}\n` +
-                `👥 Invitees: ${attendeesRaw || "None"}\n\n` +
                 `The meeting has been added to your calendar.`
             );
 
             const modalEl = document.getElementById('bookingModal');
             const modal = bootstrap.Modal.getInstance(modalEl);
             if(modal) modal.hide(); else modalEl.classList.remove('show');
+            
             loadAvailability(roomEmail); 
+            
+            // 🛠️ UPDATE 4: Instant Logout after booking
+            signOut(); 
+
         } else {
             const err = await res.json();
             alert("Error: " + (err.detail || JSON.stringify(err)));
