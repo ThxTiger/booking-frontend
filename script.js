@@ -21,7 +21,7 @@ let sessionTimeout = null;
 let isAuthInProgress = false; 
 let manuallyUnlockedEventId = null;
 
-// 🛠️ FIX: Track the last event ID to detect changes (Cancellations/New Meetings)
+// Track changes to auto-refresh timeline
 let lastKnownEventId = "init"; 
 
 // ================= INITIALIZATION =================
@@ -29,10 +29,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     initModalTimes();
     await fetchRooms();
     
-    // The Heartbeat: Checks status every 5 seconds
+    // Heartbeat (5s)
     setInterval(checkForActiveMeeting, 5000); 
     
-    // The Timeline Refresher: Also refresh the full timeline every 60 seconds just in case
+    // Timeline Auto-Refresh (60s backup)
     setInterval(() => {
         const index = document.getElementById('roomSelect').value;
         if (index) loadAvailability(availableRooms[index].emailAddress);
@@ -63,7 +63,7 @@ function signOut() {
     stopCheckInCountdown();
     stopMeetingEndTimer();
 
-    // 🧠 MEMORY TRICK: Keep details if Red Screen is active
+    // 🧠 MEMORY TRICK: Keep details visible if Red Screen is active
     const overlay = document.getElementById('meetingInProgressOverlay');
     if (overlay.classList.contains('d-none')) {
         document.getElementById('bannerSubject').textContent = "";
@@ -82,7 +82,7 @@ function handleLoginSuccess(acc) {
     
     if(sessionTimeout) clearTimeout(sessionTimeout);
     
-    // Silent Logout (No Alert)
+    // Silent Session Expiry
     sessionTimeout = setTimeout(() => { 
         console.log("Session timed out. Locking Kiosk."); 
         signOut(); 
@@ -100,7 +100,6 @@ async function getAuthToken() {
     } catch (error) { return null; }
 }
 
-// --- 🔄 MAIN FUNCTION ---
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
@@ -119,17 +118,13 @@ async function checkForActiveMeeting() {
 
         let event = await res.json();
 
-        // 🛠️ FIX: AUTO-REFRESH TIMELINE ON CHANGE 🛠️
-        // If the meeting ID changed (e.g., null -> "123" OR "123" -> null),
-        // it means a meeting started, ended, or was CANCELLED.
-        // We force the timeline to reload immediately.
+        // Auto-Refresh Timeline on Status Change
         const currentId = event ? event.id : "free";
         if (lastKnownEventId !== "init" && lastKnownEventId !== currentId) {
             console.log("🔄 Status Change Detected! Refreshing Timeline...");
             loadAvailability(roomEmail);
         }
         lastKnownEventId = currentId;
-
 
         const banner = document.getElementById('checkInBanner');
         const overlay = document.getElementById('meetingInProgressOverlay');
@@ -153,7 +148,7 @@ async function checkForActiveMeeting() {
             return;
         }
 
-        // --- 🧠 MEMORY PROTECTION LOGIC 🧠 ---
+        // --- MEMORY PROTECTION LOGIC ---
         const isRedScreenActive = !overlay.classList.contains('d-none');
         const isSameEvent = (currentLockedEvent && currentLockedEvent.id === event.id);
         
@@ -161,11 +156,9 @@ async function checkForActiveMeeting() {
         let displayOrganizer = event.organizer?.emailAddress?.name || "Unknown";
 
         if (isRedScreenActive && isSameEvent && event.subject === "Busy") {
-            // Keep cached details
             displaySubject = document.getElementById('overlaySubject').textContent;
             displayOrganizer = document.getElementById('overlayOrganizer').textContent.replace("Booked by: ", "");
         } else {
-             // Normal Update
              let cleanSubject = (event.subject || "").trim();
              const cleanOrg = displayOrganizer.trim();
              if (cleanSubject.toLowerCase() === cleanOrg.toLowerCase() || cleanSubject === "") {
@@ -194,7 +187,7 @@ async function checkForActiveMeeting() {
             return; 
         }
 
-        // ACTIVE
+        // ACTIVE & CHECKED IN
         if (event.categories && event.categories.includes("Checked-In")) {
              banner.style.display = "none"; 
              stopCheckInCountdown();
@@ -204,7 +197,7 @@ async function checkForActiveMeeting() {
              return;
         } 
         
-        // NOT CHECKED IN
+        // ACTIVE & PENDING CHECK-IN
         if (event.id !== manuallyUnlockedEventId) manuallyUnlockedEventId = null;
         banner.style.display = "block";
         overlay.classList.add('d-none'); 
@@ -236,18 +229,15 @@ function startGenericCountdown(targetDate, elementId, expireText="00:00") {
 }
 function stopCheckInCountdown() { if (checkInCountdown) clearInterval(checkInCountdown); }
 
-// 🔒 SECURE CHECK-IN: Only Organizer or Invitees 🔒
+// 🔒 SECURE CHECK-IN 🔒
 async function performCheckIn(roomEmail, eventId, eventDetails) {
-    stopCheckInCountdown(); // Pause countdown
+    stopCheckInCountdown();
     
-    // 1. Prepare Allowed List
     const organizerEmail = eventDetails.organizer?.emailAddress?.address?.toLowerCase() || "";
-    // Requires Backend v15 update to fetch 'attendees'
     const attendees = eventDetails.attendees || []; 
     const allowedEmails = attendees.map(a => a.emailAddress?.address?.toLowerCase());
     allowedEmails.push(organizerEmail);
 
-    // 2. Force Popup Authentication
     let userEmail = "";
     try {
         const loginResp = await myMSALObj.loginPopup({
@@ -261,16 +251,12 @@ async function performCheckIn(roomEmail, eventId, eventDetails) {
         return;
     }
 
-    // 3. Verify Identity
-    // Note: If 'attendees' is empty because backend didn't send it, only Organizer can check in.
     if (!allowedEmails.includes(userEmail)) {
         alert(`⛔ ACCESS DENIED\n\nYou (${userEmail}) are not invited to this meeting.`);
-        // Optional: Force logout to clear the screen for next user
         signOut();
         return;
     }
 
-    // 4. Identity Confirmed -> Call Backend
     try {
         const res = await fetch(`${API_URL}/checkin`, {
             method: 'POST',
@@ -325,17 +311,14 @@ function startMeetingEndTimer(endTimeStr) {
 }
 function stopMeetingEndTimer() { if (meetingEndInterval) clearInterval(meetingEndInterval); }
 
-// 🔒 SECURE END MEETING: Only Organizer or Invitees 🔒
+// 🔒 SECURE END MEETING 🔒
 async function secureEndMeeting() {
     if (isAuthInProgress) return;
     
-    // 1. Prepare Allowed List (Organizer + Attendees)
     const organizerEmail = currentLockedEvent.organizer?.emailAddress?.address?.toLowerCase() || "";
     const attendees = currentLockedEvent.attendees || [];
-    
-    // Create the list of authorized emails
     const allowedEmails = attendees.map(a => a.emailAddress?.address?.toLowerCase());
-    allowedEmails.push(organizerEmail); // Add organizer to the list
+    allowedEmails.push(organizerEmail);
 
     const roomIndex = document.getElementById('roomSelect').value;
     const roomEmail = availableRooms[roomIndex].emailAddress;
@@ -344,7 +327,6 @@ async function secureEndMeeting() {
     isAuthInProgress = true;
 
     try {
-        // 2. Force Popup Authentication (Same as Check-In)
         const loginResp = await myMSALObj.loginPopup({
             scopes: ["User.Read"],
             prompt: "select_account"
@@ -352,31 +334,25 @@ async function secureEndMeeting() {
         
         const userEmail = loginResp.account.username.toLowerCase();
         
-        // 3. Verify Identity
         if (!allowedEmails.includes(userEmail)) {
             alert(`⛔ ACCESS DENIED\n\nYou (${userEmail}) are not authorized to end this meeting.`);
             return;
         }
 
-        // 4. Identity Confirmed -> Call Backend
         const res = await fetch(`${API_URL}/end-meeting`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                // We send the token to prove identity (Good practice)
                 'Authorization': `Bearer ${await getAuthToken()}` 
             },
             body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
         });
 
         if (res.ok) {
-            // Success! Unlock the screen immediately
             manuallyUnlockedEventId = eventId;
             document.getElementById('meetingInProgressOverlay').classList.add('d-none');
             currentLockedEvent = null; 
             stopMeetingEndTimer(); 
-            
-            // Refresh to show the room is now Green/Free
             checkForActiveMeeting();
         } else {
             alert("Error ending meeting. Please try again.");
@@ -390,6 +366,60 @@ async function secureEndMeeting() {
 }
 
 // ================= BOOKING & TIMELINE =================
+
+// 🆕 NEW: Custom Kiosk Alert Function (Auto-Close)
+function showKioskAlert(message, duration, callback) {
+    // 1. Create Overlay
+    const overlay = document.createElement('div');
+    overlay.id = "kiosk-success-overlay";
+    overlay.style.cssText = `
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85); z-index: 99999;
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
+        color: white; font-family: sans-serif; text-align: center;
+    `;
+    
+    // 2. Create Content
+    const content = document.createElement('div');
+    content.innerHTML = `
+        <div style="font-size: 4rem; margin-bottom: 20px;">✅</div>
+        <h2 style="font-size: 2.5rem;">Booking Confirmed</h2>
+        <div style="font-size: 1.5rem; margin-top: 20px; text-align: left; background: rgba(255,255,255,0.1); padding: 20px; border-radius: 10px;">
+            ${message}
+        </div>
+        <button id="kiosk-close-btn" class="btn btn-success btn-lg mt-4" style="font-size: 1.5rem; padding: 10px 40px;">
+            OK (Closing in <span id="kiosk-timer">4</span>s)
+        </button>
+    `;
+    
+    overlay.appendChild(content);
+    document.body.appendChild(overlay);
+
+    // 3. Logic to Close
+    let secondsLeft = duration / 1000;
+    const timerSpan = document.getElementById('kiosk-timer');
+    
+    const interval = setInterval(() => {
+        secondsLeft--;
+        if(timerSpan) timerSpan.innerText = secondsLeft;
+    }, 1000);
+
+    const close = () => {
+        clearInterval(interval);
+        if(document.body.contains(overlay)) document.body.removeChild(overlay);
+        if(callback) callback();
+    };
+
+    // Auto-Close
+    const timeout = setTimeout(close, duration);
+
+    // Manual Close
+    document.getElementById('kiosk-close-btn').onclick = () => {
+        clearTimeout(timeout);
+        close();
+    };
+}
+
 async function createBooking() {
     if (!username) return alert("Please sign in first.");
     const index = document.getElementById('roomSelect').value;
@@ -423,12 +453,28 @@ async function createBooking() {
         });
         
         if (res.ok) {
-            alert(`✅ BOOKING CONFIRMED`);
+            // Close the form modal first
             const modalEl = document.getElementById('bookingModal');
             const modal = bootstrap.Modal.getInstance(modalEl);
             if(modal) modal.hide(); else modalEl.classList.remove('show');
+
             loadAvailability(roomEmail); 
-            signOut(); // Instant Logout
+            
+            // 🆕 Construct Detailed Message
+            const startFmt = new Date(startInput).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const endFmt = new Date(endInput).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            const msg = `
+                <strong>Subject:</strong> ${subject}<br>
+                <strong>Unit:</strong> ${filiale}<br>
+                <strong>Time:</strong> ${startFmt} - ${endFmt}<br>
+                <strong>Invitees:</strong> ${attendeesRaw || "None"}
+            `;
+
+            // 🆕 Show Auto-Closing Kiosk Alert
+            showKioskAlert(msg, 4000, () => {
+                signOut(); // Auto-logout after alert closes
+            });
+
         } else {
             const err = await res.json();
             alert("Error: " + (err.detail || JSON.stringify(err)));
@@ -458,7 +504,6 @@ function handleRoomChange() {
     const index = document.getElementById('roomSelect').value; 
     const room = availableRooms[index]; 
     if (room) { 
-        // Force reset the last event ID so a new room always fetches fresh timeline
         lastKnownEventId = "init"; 
         loadAvailability(room.emailAddress); 
         checkForActiveMeeting(); 
@@ -491,7 +536,6 @@ async function loadAvailability(email) {
     finally { document.getElementById('loadingSpinner').style.display = "none"; } 
 }
 
-// ... (Timeline/Tooltip helpers remain same) ...
 function handleBookClick() { 
     if(!username) { signIn(); return; } 
     document.getElementById('displayEmail').value = username; 
@@ -531,7 +575,8 @@ function renderTimeline(data, viewStart, viewEnd) {
     const schedule = (data.value && data.value[0]) ? data.value[0] : null; 
     if (schedule && schedule.scheduleItems) { 
         schedule.scheduleItems.forEach(item => { 
-            if (item.status === 'busy') { 
+            // 🛠️ FIX: DRAW TENTATIVE BLOCKS AS BUSY
+            if (item.status === 'busy' || item.status === 'tentative') { 
                 const start = new Date(item.start.dateTime + 'Z'); 
                 const end = new Date(item.end.dateTime + 'Z'); 
                 const leftPct = ((start - viewStart) / totalDurationMs) * 100; 
