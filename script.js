@@ -10,7 +10,7 @@ const msalConfig = {
 };
 const loginRequest = { scopes: ["User.Read", "Calendars.ReadWrite"] };
 
-// 🛠️ FIX 1: Renamed this from 'msalInstance' to 'myMSALObj' to match your other functions
+// Renamed to 'myMSALObj' to match your usage
 const myMSALObj = new msal.PublicClientApplication(msalConfig);
 
 let username = ""; 
@@ -29,7 +29,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     setInterval(checkForActiveMeeting, 5000); // Poll every 5 seconds
     
     try {
-        // 🛠️ FIX 2: Updated these to use 'myMSALObj'
         await myMSALObj.initialize();
         const response = await myMSALObj.handleRedirectPromise();
         if (response) handleLoginSuccess(response.account);
@@ -40,19 +39,35 @@ async function signIn() {
     if(isAuthInProgress) return;
     isAuthInProgress = true;
     try { 
-        // 🛠️ FIX 3: Updated to use 'myMSALObj'
         await myMSALObj.loginRedirect(loginRequest); 
     } 
     catch (e) { console.error(e); } 
     finally { isAuthInProgress = false; }
 }
 
+// 🛠️ UPDATE 1: Data Wiping on Sign Out
 function signOut() { 
     username = ""; 
+    
+    // 1. Reset UI Buttons
     document.getElementById("userWelcome").style.display="none"; 
     document.getElementById("loginBtn").style.display="inline-block"; 
     document.getElementById("logoutBtn").style.display="none"; 
+    
+    // 2. Kill Timers
     if(sessionTimeout) clearTimeout(sessionTimeout);
+    stopCheckInCountdown();
+    stopMeetingEndTimer();
+
+    // 3. WIPE DATA (Privacy Protection)
+    // Immediately remove secret details from the screen
+    document.getElementById('bannerSubject').textContent = "";
+    document.getElementById('bannerOrganizer').textContent = "";
+
+    // 4. Force Refresh
+    // This calls the backend immediately. Since we have no token, 
+    // the backend will return "Busy" (Red Block) without details.
+    checkForActiveMeeting();
 }
 
 function handleLoginSuccess(acc) { 
@@ -73,7 +88,7 @@ async function getAuthToken() {
         // 1. Check if a user is signed in
         const account = myMSALObj.getAllAccounts()[0];
         if (!account) {
-            console.warn("⚠️ No user signed in. Cannot fetch secure data.");
+            // No warning needed here anymore, as we support Kiosk mode
             return null;
         }
 
@@ -86,36 +101,41 @@ async function getAuthToken() {
         return response.accessToken;
 
     } catch (error) {
-        console.error("❌ Token Fetch Failed:", error);
+        console.error("Token silent fetch failed (likely session expired):", error);
         return null;
     }
 }
 
 // --- 🔄 MAIN FUNCTION: Check for Meetings ---
+// 🛠️ UPDATE 2: Enable Kiosk Mode (Run without token)
 async function checkForActiveMeeting() {
     const index = document.getElementById('roomSelect').value;
     if (!index) return;
     const roomEmail = availableRooms[index].emailAddress;
 
     try {
-        // 🔒 STEP 1: GET THE TOKEN
+        // 1. Try to get token (might be null if logged out)
         const token = await getAuthToken();
         
-        if (!token) {
-            console.log("Waiting for login..."); 
-            return; // Stop if we don't have an ID card yet
+        // 2. Prepare Headers (Attach token ONLY if it exists)
+        const headers = { "Content-Type": "application/json" };
+        if (token) {
+            headers["Authorization"] = `Bearer ${token}`;
         }
 
-        // 🔒 STEP 2: SEND TOKEN TO BACKEND (Modified Fetch)
+        // 3. Call Backend
+        // We removed the "if (!token) return" block so Kiosk mode works!
         const res = await fetch(`${API_URL}/active-meeting?room_email=${roomEmail}`, {
             method: "GET",
-            headers: {
-                "Authorization": `Bearer ${token}`,  // <--- THE KEY CHANGE
-                "Content-Type": "application/json"
-            }
+            headers: headers
         });
 
-        // (The rest of your logic remains exactly the same)
+        if (res.status === 401) {
+            // Safety: If backend refuses us, clear the screen
+            document.getElementById('checkInBanner').style.display = "none";
+            return;
+        }
+
         let event = await res.json();
         
         const banner = document.getElementById('checkInBanner');
@@ -147,15 +167,12 @@ async function checkForActiveMeeting() {
 
         // Check if Outlook overwrote the subject with the organizer's name
         if (cleanSubject.toLowerCase() === cleanOrg.toLowerCase() || cleanSubject === "") {
-            console.log("⚠️ Corrupted Subject Detected. Fixing...");
-            
             // Try to find "Filiale :" inside the body preview
             if (event.bodyPreview) {
                 const filialeMatch = event.bodyPreview.match(/Filiale\s*:\s*(.*?)(\n|$|Reason)/i);
                 if (filialeMatch && filialeMatch[1]) {
                     event.subject = filialeMatch[1].trim(); 
                 } else if (event.bodyPreview.length > 5) {
-                    // Fallback: use first 40 chars of body
                     event.subject = event.bodyPreview.substring(0, 40) + "...";
                 } else {
                     event.subject = "Private Meeting";
@@ -172,60 +189,49 @@ async function checkForActiveMeeting() {
         // --- 🚥 LOGIC BRANCHING: FUTURE vs ACTIVE 🚥 ---
 
         // CASE 3: FUTURE MEETING (Upcoming)
-        // BUG FIX: Strictly check if Now < Start
         if (now < start) {
-            // Setup Blue Banner (Info Mode)
             banner.style.display = "block";
-            overlay.classList.add('d-none'); // Ensure Red Screen is hidden
+            overlay.classList.add('d-none'); 
             
-            // UI: "STARTS IN"
             document.getElementById('bannerStatusTitle').textContent = "📅 Next Meeting";
             const badge = document.getElementById('bannerBadge');
             badge.className = "badge bg-info mb-1";
             badge.textContent = "STARTS IN";
             
-            // Hide Check-in Button (Can't check in yet)
             document.getElementById('realCheckInBtn').style.display = "none";
             
-            // Start Countdown to START TIME
             startGenericCountdown(start, "checkInTimer", "STARTING...");
             return; 
         }
 
         // CASE 4: ACTIVE MEETING (Happening Now)
-        // (now >= start && now < end)
 
         // 4A: ALREADY CHECKED IN?
         if (event.categories && event.categories.includes("Checked-In")) {
-             banner.style.display = "none"; // Hide Yellow/Blue Banner
+             banner.style.display = "none"; 
              stopCheckInCountdown();
              
-             // Show Red Overlay (Do Not Disturb)
              if (overlay.classList.contains('d-none') && event.id !== manuallyUnlockedEventId) {
                  showMeetingMode(event);
              }
              return;
         } 
         
-        // 4B: NOT CHECKED IN (Ghost Buster Danger Zone)
-        // Show Yellow Banner
+        // 4B: NOT CHECKED IN
         if (event.id !== manuallyUnlockedEventId) manuallyUnlockedEventId = null;
 
         banner.style.display = "block";
         overlay.classList.add('d-none'); 
         
-        // UI: "DEADLINE"
         document.getElementById('bannerStatusTitle').textContent = "⚠️ Meeting Started! Confirm Presence";
         const badge = document.getElementById('bannerBadge');
         badge.className = "badge bg-danger mb-1";
         badge.textContent = "AUTO-CANCEL IN";
 
-        // Show Check-In Button
         const btn = document.getElementById('realCheckInBtn');
         btn.style.display = "inline-block";
         btn.onclick = () => performCheckIn(roomEmail, event.id, event);
 
-        // Timer: 5 Minutes from Start Time
         const deadline = new Date(start.getTime() + 5*60000); 
         startGenericCountdown(deadline, "checkInTimer", "EXPIRED");
 
@@ -265,6 +271,7 @@ async function performCheckIn(roomEmail, eventId, eventDetails) {
     } catch (e) { alert(e.message); }
 }
 
+// 🛠️ UPDATE 3: Stop Session Timer in Meeting Mode
 function showMeetingMode(event) {
     currentLockedEvent = event;
     const overlay = document.getElementById('meetingInProgressOverlay');
@@ -273,11 +280,15 @@ function showMeetingMode(event) {
     
     // UI Update
     const safeSubject = document.getElementById('bannerSubject').textContent;
-    document.getElementById('overlaySubject').textContent = safeSubject; // Use the repaired subject
+    document.getElementById('overlaySubject').textContent = safeSubject; 
     document.getElementById('overlayOrganizer').textContent = `Booked by: ${event.organizer?.emailAddress?.name}`;
     document.getElementById('overlayTime').textContent = `${start} - ${end}`;
     
     overlay.classList.remove('d-none');
+
+    // --- FIX: Kill session timer so no popup interruptions ---
+    if (sessionTimeout) clearTimeout(sessionTimeout);
+
     startMeetingEndTimer(event.end.dateTime);
 }
 
