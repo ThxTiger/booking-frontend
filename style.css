@@ -37,14 +37,15 @@ body {
     background-color: #f8f9fa;
     border-radius: 8px;
     border: 1px solid #e9ecef;
-    margin-top: 35px; /* Increased margin to fit staggered labels */
+    /* 🛠️ INCREASED MARGIN: Made room for the upper labels */
+    margin-top: 50px; 
 }
 
-/* --- TIME LABELS (The Fix) --- */
+/* --- TIME LABELS --- */
 .timeline-time-label {
     position: absolute;
-    top: -25px;
-    font-size: 0.75rem;
+    top: -25px; /* Standard position (Lower row) */
+    font-size: 0.70rem; /* Slightly smaller for mobile safety */
     color: #6c757d;
     font-weight: 600;
     transform: translateX(-50%); /* Centers the label on the tick */
@@ -52,10 +53,10 @@ body {
     z-index: 2;
 }
 
-/* 🛠️ THE FIX: STAGGER LABELS 🛠️ */
-/* Moves every second label higher up so they don't overlap */
-.timeline-time-label:nth-of-type(even) {
-    top: -40px; 
+/* 🛠️ THE FIX: TARGET THE JS CLASS 🛠️ */
+/* This specific class is added by script.js to odd hours */
+.timeline-time-label.stagger-up {
+    top: -45px; /* Moves these labels HIGHER up */
 }
 
 /* Vertical Grid Lines */
