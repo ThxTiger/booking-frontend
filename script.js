@@ -554,17 +554,28 @@ function renderTimeline(data, viewStart, viewEnd) {
     const timelineContainer = document.getElementById('timeline'); 
     timelineContainer.innerHTML = ''; 
     const totalDurationMs = viewEnd - viewStart; 
+    
     const track = document.createElement('div'); 
     track.className = 'timeline-track'; 
+    
     const numHours = 12; 
     for (let i = 0; i <= numHours; i++) { 
         let slotTime = new Date(viewStart.getTime() + i * 60 * 60 * 1000); 
         let pct = (i / numHours) * 100; 
+        
         const label = document.createElement('div'); 
         label.className = 'timeline-time-label'; 
+        
+        // 🛠️ THE FIX: Force Zig-Zag using JavaScript
+        // If 'i' is an odd number (1, 3, 5...), add the 'stagger-up' class
+        if (i % 2 !== 0) {
+            label.classList.add('stagger-up');
+        }
+
         label.style.left = `${pct}%`; 
         label.innerText = slotTime.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}); 
         track.appendChild(label); 
+        
         if (i > 0 && i < numHours) { 
             const line = document.createElement('div'); 
             line.className = 'grid-line'; 
@@ -572,21 +583,23 @@ function renderTimeline(data, viewStart, viewEnd) {
             track.appendChild(line); 
         } 
     } 
+    
     const schedule = (data.value && data.value[0]) ? data.value[0] : null; 
     if (schedule && schedule.scheduleItems) { 
         schedule.scheduleItems.forEach(item => { 
-            // 🛠️ FIX: DRAW TENTATIVE BLOCKS AS BUSY
             if (item.status === 'busy' || item.status === 'tentative') { 
                 const start = new Date(item.start.dateTime + 'Z'); 
                 const end = new Date(item.end.dateTime + 'Z'); 
                 const leftPct = ((start - viewStart) / totalDurationMs) * 100; 
                 const widthPct = ((end - start) / totalDurationMs) * 100; 
+                
                 if (leftPct < 100 && (leftPct + widthPct) > 0) { 
                     const block = document.createElement('div'); 
                     block.className = 'event-block'; 
                     block.style.left = `${Math.max(0, leftPct)}%`; 
                     block.style.width = `${Math.min(widthPct, 100 - Math.max(0, leftPct))}%`; 
                     block.innerHTML = '<span class="event-label">Busy</span>'; 
+                    
                     block.addEventListener('mouseenter', (e) => showTooltip(e, item));
                     block.addEventListener('mousemove', (e) => moveTooltip(e));
                     block.addEventListener('mouseleave', hideTooltip);
@@ -597,7 +610,6 @@ function renderTimeline(data, viewStart, viewEnd) {
     } 
     timelineContainer.appendChild(track); 
 }
-
 function showTooltip(e, item) {
     const tooltip = document.getElementById('timelineTooltip');
     const subject = item.subject || "Private Meeting";
