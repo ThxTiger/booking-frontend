@@ -22,7 +22,7 @@ body {
 /* ========================================= */
 .timeline-container {
     width: 100%;
-    overflow-x: auto;
+    /* overflow-x: auto;  <-- Removed to force it to fit the card width */
     background-color: #fff;
     padding: 30px 20px;
     border-radius: 12px;
@@ -37,10 +37,10 @@ body {
     background-color: #f8f9fa;
     border-radius: 8px;
     border: 1px solid #e9ecef;
-    margin-top: 25px;
+    margin-top: 35px; /* Increased margin to fit staggered labels */
 }
 
-/* Time Labels (e.g. 14:00, 15:00) */
+/* --- TIME LABELS (The Fix) --- */
 .timeline-time-label {
     position: absolute;
     top: -25px;
@@ -49,6 +49,13 @@ body {
     font-weight: 600;
     transform: translateX(-50%); /* Centers the label on the tick */
     white-space: nowrap;
+    z-index: 2;
+}
+
+/* 🛠️ THE FIX: STAGGER LABELS 🛠️ */
+/* Moves every second label higher up so they don't overlap */
+.timeline-time-label:nth-of-type(even) {
+    top: -40px; 
 }
 
 /* Vertical Grid Lines */
@@ -69,10 +76,15 @@ body {
     /* Gradient Red/Orange for a modern look */
     background: linear-gradient(135deg, #ff5f6d 0%, #ffc371 100%); 
     border-radius: 6px;
-    z-index: 2;
+    z-index: 3;
     box-shadow: 0 4px 6px rgba(0,0,0,0.1);
     cursor: pointer;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
+    
+    /* Flex to center text */
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .event-block:hover {
@@ -87,14 +99,10 @@ body {
     font-size: 11px;
     font-weight: bold;
     text-transform: uppercase;
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 90%;
+    padding: 0 5px;
     pointer-events: none; /* Mouse passes through text to the block */
 }
 
@@ -114,6 +122,7 @@ body {
     box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     min-width: 200px;
     backdrop-filter: blur(4px);
+    border: 1px solid rgba(255,255,255,0.1);
 }
 
 #tooltipSubject {
