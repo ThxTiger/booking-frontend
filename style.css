@@ -272,3 +272,87 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);backgro
     border-radius: 8px;
 }
 .avail-conflict-msg.hidden { display: none; }
+
+/* ══════════════════════════════════════ */
+/*  MODAL LOGOS                          */
+/* ══════════════════════════════════════ */
+.modal-panel-header {
+    flex-wrap: wrap;
+    gap: 10px;
+}
+.modal-logos {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 2px;
+}
+.modal-logos img {
+    height: 26px;
+    object-fit: contain;
+    filter: brightness(0) invert(1);
+    opacity: 0.7;
+}
+.modal-logo-divider {
+    width: 1px;
+    height: 20px;
+    background: rgba(255,255,255,0.15);
+}
+
+/* ══════════════════════════════════════ */
+/*  DATETIME INPUT — polished            */
+/* ══════════════════════════════════════ */
+.datetime-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.datetime-icon {
+    position: absolute;
+    left: 12px;
+    color: rgba(255,255,255,0.3);
+    pointer-events: none;
+    z-index: 1;
+    flex-shrink: 0;
+}
+.datetime-inp {
+    padding-left: 36px !important;
+    color-scheme: dark;
+    cursor: pointer;
+}
+/* Style the native date/time picker text */
+.datetime-inp::-webkit-datetime-edit { color: rgba(255,255,255,0.85); }
+.datetime-inp::-webkit-datetime-edit-fields-wrapper { padding: 0; }
+.datetime-inp::-webkit-datetime-edit-text { color: rgba(255,255,255,0.3); padding: 0 2px; }
+.datetime-inp::-webkit-datetime-edit-year-field,
+.datetime-inp::-webkit-datetime-edit-month-field,
+.datetime-inp::-webkit-datetime-edit-day-field,
+.datetime-inp::-webkit-datetime-edit-hour-field,
+.datetime-inp::-webkit-datetime-edit-minute-field,
+.datetime-inp::-webkit-datetime-edit-ampm-field {
+    color: rgba(255,255,255,0.85);
+    background: transparent;
+    border-radius: 3px;
+    padding: 0 2px;
+}
+.datetime-inp::-webkit-datetime-edit-year-field:focus,
+.datetime-inp::-webkit-datetime-edit-month-field:focus,
+.datetime-inp::-webkit-datetime-edit-day-field:focus,
+.datetime-inp::-webkit-datetime-edit-hour-field:focus,
+.datetime-inp::-webkit-datetime-edit-minute-field:focus,
+.datetime-inp::-webkit-datetime-edit-ampm-field:focus {
+    background: var(--green);
+    color: #fff;
+    outline: none;
+}
+.datetime-inp::-webkit-calendar-picker-indicator {
+    filter: invert(0.6);
+    cursor: pointer;
+    padding: 0;
+    margin-right: 2px;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+}
+.datetime-inp::-webkit-calendar-picker-indicator:hover { opacity: 1; }
