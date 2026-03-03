@@ -35,8 +35,8 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);backgro
 @keyframes statusPulse{0%,100%{opacity:1}50%{opacity:0.5}}
 #statusLabel{font-size:0.75rem;font-weight:700;letter-spacing:0.06em;color:var(--accent);text-transform:uppercase;transition:color 0.5s;}
 .live-clock{font-family:var(--mono);font-size:1.4rem;font-weight:500;color:var(--text-dim);margin-top:20px;letter-spacing:0.04em;}
-.left-logos{margin-top:20px;display:flex;align-items:center;gap:20px;opacity:0.35;filter:brightness(0) invert(1);}
-.left-logos img{height:34px;object-fit:contain;}
+.left-logos{margin-top:20px;display:flex;align-items:center;gap:12px;opacity:0.35;filter:brightness(0) invert(1);}
+.left-logos img{height:22px;object-fit:contain;}
 .panel-right{flex:1;height:100%;display:flex;flex-direction:column;justify-content:center;padding:40px 52px;position:relative;overflow:hidden;}
 .panel-right::before{content:'';position:absolute;bottom:-100px;right:-100px;width:500px;height:500px;border-radius:50%;background:radial-gradient(circle,var(--accent-glow) 0%,transparent 65%);pointer-events:none;transition:background 0.6s;}
 .auth-corner{position:absolute;top:28px;right:36px;display:flex;align-items:center;gap:10px;z-index:10;}
@@ -94,8 +94,8 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);backgro
 .btn-occ-end:hover{filter:brightness(1.15);transform:translateY(-1px);}
 .btn-occ-extend{padding:12px 26px;background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.75);font-family:var(--font);font-weight:600;font-size:0.85rem;border-radius:10px;cursor:pointer;transition:all 0.2s;}
 .btn-occ-extend:hover{background:rgba(255,255,255,0.14);color:#fff;transform:translateY(-1px);}
-.occ-logos{margin-top:28px;display:flex;align-items:center;gap:20px;filter:brightness(0) invert(1);opacity:0.2;}
-.occ-logos img{height:34px;object-fit:contain;}
+.occ-logos{margin-top:28px;display:flex;align-items:center;gap:14px;filter:brightness(0) invert(1);opacity:0.2;}
+.occ-logos img{height:20px;object-fit:contain;}
 .occ-right{width:260px;min-width:220px;background:var(--red-sidebar);border-left:1px solid rgba(255,255,255,0.06);display:flex;flex-direction:column;padding:36px 28px;overflow-y:auto;}
 .occ-clock-wrap{margin-bottom:12px;}
 .occ-clock{font-family:var(--mono);font-size:2.2rem;font-weight:500;color:var(--red);letter-spacing:0.02em;}
@@ -283,23 +283,24 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);backgro
 .modal-logos {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 10px;
     width: 100%;
     padding-bottom: 14px;
     border-bottom: 1px solid rgba(255,255,255,0.06);
     margin-bottom: 2px;
 }
 .modal-logos img {
-    height: 34px;
+    height: 26px;
     object-fit: contain;
     filter: brightness(0) invert(1);
     opacity: 0.7;
 }
 .modal-logo-divider {
     width: 1px;
-    height: 24px;
+    height: 20px;
     background: rgba(255,255,255,0.15);
 }
+
 /* ══════════════════════════════════════ */
 /*  DATETIME INPUT — polished            */
 /* ══════════════════════════════════════ */
