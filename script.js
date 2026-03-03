@@ -9,11 +9,11 @@ const msalConfig = {
         authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6",
         redirectUri: window.location.origin,
     },
-    // CRITICAL: Must be localStorage so the Kiosk popup can share the token with the main screen
+    // OBLIGATOIRE POUR LE KIOSQUE : Permet au popup et à la fenêtre principale de partager le token
     cache: { cacheLocation: "localStorage" } 
 };
 
-// prompt: "select_account" guarantees the next employee isn't auto-logged in as you
+// "select_account" force le Kiosque à toujours demander "Qui êtes-vous ?" au lieu de connecter le précédent
 const loginRequest = { 
     scopes: ["User.Read", "Calendars.ReadWrite"],
     prompt: "select_account" 
@@ -59,7 +59,7 @@ function showView(viewId) {
 }
 
 // ═══════════════════════════════════════════
-//  INITIALIZATION
+//  INITIALIZATION & KIOSK SELF-HEALING
 // ═══════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
     initModalTimes();
@@ -76,6 +76,17 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     try {
         await myMSALObj.initialize();
+        
+        // --- LE CORRECTIF KIOSQUE EST ICI ---
+        // Si le Kiosque a cassé le popup et nous a redirigé bêtement, ceci force la capture du token.
+        const redirectResponse = await myMSALObj.handleRedirectPromise();
+        if (redirectResponse) {
+            handleLoginSuccess(redirectResponse.account);
+            // On ferme ce popup cassé pour revenir à l'écran principal
+            try { window.close(); } catch(e) {} 
+        }
+
+        // Vérification standard de la session active
         const accounts = myMSALObj.getAllAccounts();
         if (accounts.length > 0) {
             handleLoginSuccess(accounts[0]);
@@ -105,14 +116,14 @@ function startClock() {
 }
 
 // ═══════════════════════════════════════════
-//  AUTH (POPUP FLOW WITH KIOSK POLLER)
+//  AUTH (POPUP FLOW + KIOSK POLLER)
 // ═══════════════════════════════════════════
 async function signIn() {
     if (isAuthInProgress) return;
     isAuthInProgress = true;
     let authCompleted = false;
 
-    // KIOSK POLLER: Actively watch storage because the Kiosk WebView blocks popup messages
+    // LE POLLER: Surveille si le popup a réussi à écrire le token en arrière-plan
     const kioskPoller = setInterval(() => {
         const accounts = myMSALObj.getAllAccounts();
         if (accounts.length > 0 && !authCompleted) {
@@ -146,7 +157,7 @@ function signOut() {
     if (loginBtn) loginBtn.style.display = "inline-block";
     if (sessionTimeout) clearTimeout(sessionTimeout);
     
-    // Silently wipe the tablet's local memory instead of triggering the MS Popup
+    // Déconnexion silencieuse pour ne pas avoir de popup Microsoft "Quel compte déconnecter ?"
     localStorage.clear();
     sessionStorage.clear();
     
@@ -201,7 +212,7 @@ async function triggerSignInThenBook() {
     isAuthInProgress = true;
     let authCompleted = false;
 
-    // KIOSK POLLER: Ensures the booking modal opens even if the popup promise hangs
+    // POLLER DE RÉSERVATION : Ouvre le modal dès que le Kiosque détecte la connexion
     const kioskPoller = setInterval(() => {
         const accounts = myMSALObj.getAllAccounts();
         if (accounts.length > 0 && !authCompleted) {
@@ -379,13 +390,10 @@ async function checkForActiveMeeting() {
             return;
         }
 
-        // ACTIVE + CHECKED IN (Timer freeze fix applied here)
+        // ACTIVE + CHECKED IN (Timer freeze fix est ici)
         if (event.categories?.includes("Checked-In")) {
             setAppState("occupied");
-            
-            // FIX: Only kill the 5-min warning timer, keep the meeting end timer running!
             if (checkInInterval) { clearInterval(checkInInterval); checkInInterval = null; }
-            
             if (occupied.classList.contains("hidden") && event.id !== manuallyUnlockedEventId) {
                 showMeetingMode(event, displaySubject, displayOrg, startFmt, endFmt);
             }
@@ -610,7 +618,7 @@ async function extendMeeting(minutes) {
 }
 
 // ═══════════════════════════════════════════
-//  SECURE END MEETING (Popup Flow with Poller)
+//  SECURE END MEETING (Popup Flow + Poller)
 // ═══════════════════════════════════════════
 async function secureEndMeeting() {
     if (isAuthInProgress || !currentLockedEvent) return;
@@ -625,7 +633,6 @@ async function secureEndMeeting() {
     isAuthInProgress = true;
     let authCompleted = false;
 
-    // KIOSK POLLER
     const kioskPoller = setInterval(async () => {
         const accounts = myMSALObj.getAllAccounts();
         if (accounts.length > 0 && !authCompleted) {
