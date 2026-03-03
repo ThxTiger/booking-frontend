@@ -3,157 +3,276 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vinci Energies Room Booking</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Axians Room Booking</title>
     <script type="text/javascript" src="https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body class="state-available">
 
-<div id="timelineTooltip">
-    <div id="tooltipSubject"></div>
-    <div id="tooltipTime"></div>
-</div>
+<!-- ═══════════════════════════════════════ -->
+<!--  MAIN SCREEN (Available / Pending)     -->
+<!-- ═══════════════════════════════════════ -->
+<div id="mainScreen" class="kiosk-root">
 
-<div class="container py-4">
-    <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
-        <div class="d-flex align-items-center gap-4">
-            <img src="logo-vinci.png" alt="Vinci Energies" height="50">
-            <div class="vr" style="height: 40px; border-left: 2px solid #ccc;"></div>
-            <img src="logo-axians.png" alt="Axians" height="40">
+    <!-- LEFT PANEL — Room Identity -->
+    <div class="panel-left">
+        <div class="room-icon-wrap">
+            <div class="room-icon">
+                <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                </svg>
+            </div>
         </div>
-        
-        <div class="d-flex align-items-center gap-3">
-            <span id="userWelcome" class="text-secondary small fw-bold" style="display:none;"></span>
-            <button id="loginBtn" class="btn btn-dark btn-sm" onclick="signIn()">🔒 Sign In</button>
-            <button id="logoutBtn" class="btn btn-outline-danger btn-sm" onclick="signOut()" style="display:none;">Sign Out</button>
+
+        <div class="room-selector-wrap">
+            <div class="panel-micro-label">Select Room</div>
+            <div class="custom-select-wrap">
+                <select id="roomSelect" onchange="handleRoomChange()">
+                    <option value="" disabled selected>Loading…</option>
+                </select>
+                <svg class="select-arrow" width="11" height="11" viewBox="0 0 12 12">
+                    <path d="M2 4l4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+                </svg>
+            </div>
+        </div>
+
+        <div class="room-meta">
+            <div class="room-meta-item" id="roomFloor">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                <span>—</span>
+            </div>
+            <div class="room-meta-item" id="roomDept">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+                <span>—</span>
+            </div>
+        </div>
+
+        <div class="status-pill" id="statusPill">
+            <div class="status-dot"></div>
+            <span id="statusLabel">Available</span>
+        </div>
+
+        <div class="live-clock" id="liveClock">00:00</div>
+
+        <div class="left-logos">
+            <img src="logo-vinci.png" alt="Vinci" onerror="this.style.display='none'">
+            <img src="logo-axians.png" alt="Axians" onerror="this.style.display='none'">
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-4">
-            <div class="card shadow-sm border-0 mb-3">
-                <div class="card-body">
-                    <label class="form-label fw-bold text-secondary small">SELECT ROOM</label>
-                    <select id="roomSelect" class="form-select mb-3" onchange="handleRoomChange()">
-                        <option value="" disabled selected>Loading rooms...</option>
-                    </select>
-                </div>
+    <!-- RIGHT PANEL — Dynamic Content -->
+    <div class="panel-right">
+
+        <!-- Auth corner -->
+        <div class="auth-corner">
+            <div id="userBadge" class="user-badge-small" style="display:none;">
+                <div class="user-dot"></div>
+                <span id="userWelcome"></span>
+                <button class="btn-tiny-logout" onclick="signOut()">Sign Out</button>
             </div>
-             <button class="btn btn-primary w-100 py-3 fw-bold shadow-sm" onclick="handleBookClick()">
-                ➕ NEW BOOKING
-            </button>
+            <button id="loginBtn" class="btn-tiny-login" onclick="signIn()">🔒 Sign In</button>
+        </div>
+        <div id="loadingSpinner" class="sync-indicator" style="display:none;">Syncing…</div>
+
+        <!-- ── AVAILABLE ── -->
+        <div id="viewAvailable" class="state-view active">
+            <div class="state-hero-label">Available</div>
+            <p class="state-sub">This room is free and ready to use.</p>
+
+            <div class="action-buttons">
+                <button class="btn-primary-action" onclick="handleBookClick()">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Book Room
+                </button>
+                <button class="btn-secondary-action" onclick="openAgenda()">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    Room Calendar
+                </button>
+            </div>
+
+            <div id="nextMeetingPreview" class="next-preview" style="display:none;">
+                <div class="next-preview-label">NEXT MEETING</div>
+                <div class="next-preview-subject" id="nextSubject">—</div>
+                <div class="next-preview-time" id="nextTime">—</div>
+            </div>
         </div>
 
-        <div class="col-md-8">
-            <div id="checkInBanner" class="card text-bg-warning mb-3 shadow border-0" style="display:none;">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-start">
-                        <div>
-                            <h5 class="card-title fw-bold mb-1" id="bannerStatusTitle">⚠️ Check-In Required</h5>
-                            <div class="small mt-2">
-                                <div id="bannerSubject" class="fw-bold fs-5">...</div>
-                                <div class="text-muted">Booked by: <span id="bannerOrganizer">...</span></div>
-                            </div>
-                        </div>
-                        <div class="text-end">
-                            <span class="badge bg-danger mb-1" id="bannerBadge">DEADLINE</span>
-                            <div class="display-6 fw-bold text-danger" id="checkInTimer">--:--</div>
-                        </div>
-                    </div>
-                    <button id="realCheckInBtn" class="btn btn-dark w-100 fw-bold mt-3">✅ CONFIRM PRESENCE</button>
-                </div>
+        <!-- ── PENDING CHECK-IN ── -->
+        <div id="viewPending" class="state-view">
+            <div class="pending-badge">⚠ CHECK-IN REQUIRED</div>
+            <div class="state-hero-label" id="pendingSubject" style="font-size:2.4rem;">Meeting</div>
+            <div class="meeting-time-line" id="pendingTime">—</div>
+            <div class="meeting-organizer" id="pendingOrganizer">—</div>
+
+            <div class="countdown-box">
+                <div class="countdown-micro">Auto-cancel in</div>
+                <div class="countdown-display" id="checkInTimer">5:00</div>
             </div>
 
-            <div class="card shadow-sm border-0 h-100">
-                <div class="card-header d-flex justify-content-between align-items-center bg-white py-3">
-                    <span class="fw-bold">📅 Schedule</span>
-                    <span id="loadingSpinner" class="loading text-primary small fw-bold">⏳ Syncing...</span>
-                </div>
-                <div class="card-body p-0 d-flex flex-column justify-content-center"> 
-                    <div id="timeline" class="timeline-container w-100">
-                        <p class="text-muted text-center py-5">Select a room to view availability.</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div id="meetingInProgressOverlay" class="d-none position-fixed top-0 start-0 w-100 h-100 bg-danger text-white d-flex flex-column justify-content-center align-items-center" style="z-index: 2000;">
-    <div class="text-center">
-        <div class="spinner-grow text-light mb-3" role="status"></div>
-        <h1 class="display-1 fw-bold">⛔</h1>
-        <h1 class="display-3 fw-bold">DO NOT DISTURB</h1>
-        <h2 id="overlaySubject" class="mt-4 text-warning fw-bold">--</h2>
-        <h5 id="overlayOrganizer" class="fw-light opacity-75">--</h5>
-        
-        <div class="my-4 p-3 bg-white bg-opacity-10 rounded-3">
-            <span class="small text-uppercase fw-bold letter-spacing-1">Meeting Ends In</span>
-            <div id="meetingEndTimer" class="display-1 fw-bold">--:--</div>
-            <div id="overlayTime" class="h5 fw-light mt-2 opacity-75">--:--</div>
+            <button class="btn-checkin" id="realCheckInBtn">✅ &nbsp;Confirm Presence</button>
         </div>
 
-        <div class="d-flex flex-column align-items-center mt-5">
-             <p class="small opacity-75 mb-2">Only the <strong>organizer</strong> or <strong>attendees</strong> can end this meeting early.</p>
-            <button class="btn btn-outline-light btn-lg border-2 fw-bold px-5 rounded-pill" onclick="secureEndMeeting()">
-                🛑 END MEETING & FREE ROOM
-            </button>
-        </div>
-    </div>
-</div>
+        <!-- ── FUTURE MEETING ── -->
+        <div id="viewFuture" class="state-view">
+            <div class="state-hero-label">Available</div>
+            <p class="state-sub">Next meeting starts soon.</p>
 
-<div class="modal fade" id="bookingModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-light">
-                <h5 class="modal-title">✨ Book a Meeting</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="future-meeting-card">
+                <div class="future-badge">STARTS IN</div>
+                <div class="countdown-display" id="futureTimer" style="font-size:2.6rem;">—</div>
+                <div class="future-subject" id="futureSubject">—</div>
+                <div class="future-time" id="futureTime">—</div>
             </div>
-            <div class="modal-body">
-                <form id="bookingForm">
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small">Business Unit / Filiale</label>
-                        <input type="text" id="filiale" class="form-control" placeholder="e.g. Axians, Cegelec, Omexom, Actemium..." list="filialeOptions" required>
-                        <datalist id="filialeOptions">
-                            <option value="Axians"></option>
-                            <option value="Cegelec"></option>
-                            <option value="Omexom"></option>
-                            <option value="Vinci Energies"></option>
-                            <option value="Actemium"></option>
-                        </datalist>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small">Subject</label>
-                        <input type="text" id="subject" class="form-control" placeholder="e.g. Weekly Team Sync, Project Kickoff..." required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small">Reason</label>
-                        <textarea id="description" class="form-control" rows="2" placeholder="e.g. Discussing project milestones, budget review..."></textarea>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label fw-bold small">Invitees</label>
-                        <input type="text" id="attendees" class="form-control" placeholder="e.g. bob@axians.com, sarah@vinci-energies.com...">
-                    </div>
-                    <div class="row">
-                        <div class="col-6 mb-3"><label class="form-label fw-bold small">Start Time</label><input type="datetime-local" id="startTime" class="form-control" required></div>
-                        <div class="col-6 mb-3"><label class="form-label fw-bold small">End Time</label><input type="datetime-local" id="endTime" class="form-control" required></div>
-                    </div>
-                    <div class="mb-2">
-                        <label class="form-label fw-bold small">Organizer</label>
-                        <input type="text" id="displayEmail" class="form-control bg-light form-control-sm" readonly>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="createBooking()">Confirm Booking</button>
+
+            <div class="action-buttons" style="margin-top:24px;">
+                <button class="btn-primary-action" onclick="handleBookClick()">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Book Room
+                </button>
             </div>
         </div>
     </div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<!-- ═══════════════════════════════════════ -->
+<!--  OCCUPIED SCREEN (Red)                 -->
+<!-- ═══════════════════════════════════════ -->
+<div id="occupiedScreen" class="occupied-root hidden">
+    <div class="occ-left">
+        <div class="occ-status-label">
+            <span class="occ-pulse-dot"></span> IN USE
+        </div>
+        <div class="occ-subject" id="occSubject">—</div>
+        <div class="occ-time" id="occTime">—</div>
+        <div class="occ-meta">
+            <span id="occEndsIn">—</span>
+            <span class="occ-dot-sep">·</span>
+            <span id="occOrganizer">—</span>
+        </div>
+
+        <div class="occ-timer-block">
+            <div class="occ-timer-label">TIME REMAINING</div>
+            <div class="occ-timer" id="meetingEndTimer">--:--</div>
+        </div>
+
+        <div class="occ-actions">
+            <button class="btn-occ-end" onclick="secureEndMeeting()">End Meeting</button>
+            <button class="btn-occ-extend" onclick="extendMeeting(15)">+ 15 min</button>
+        </div>
+
+        <div class="occ-logos">
+            <img src="logo-vinci.png" alt="" onerror="this.style.display='none'">
+            <img src="logo-axians.png" alt="" onerror="this.style.display='none'">
+        </div>
+    </div>
+
+    <div class="occ-right">
+        <div class="occ-clock-wrap">
+            <div class="occ-clock" id="occClock">00:00</div>
+            <div class="occ-date" id="occDate">—</div>
+        </div>
+        <div class="occ-divider"></div>
+        <div class="occ-agenda-label">COMING UP</div>
+        <div class="occ-agenda-list" id="occAgenda">
+            <div class="occ-agenda-empty">No upcoming meetings today.</div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!--  BOOKING OVERLAY                       -->
+<!-- ═══════════════════════════════════════ -->
+<div id="bookingOverlay" class="modal-overlay hidden">
+    <div class="modal-panel">
+        <div class="modal-panel-header">
+            <span class="modal-panel-title">Book a Meeting</span>
+            <button class="modal-close-btn" onclick="closeBookingModal()">✕</button>
+        </div>
+        <div class="modal-panel-body">
+            <div class="form-row">
+                <label class="form-lbl">Business Unit</label>
+                <input type="text" id="filiale" class="form-inp" placeholder="Axians, Cegelec, Omexom…" list="filialeOpts">
+                <datalist id="filialeOpts">
+                    <option value="Axians"><option value="Cegelec">
+                    <option value="Omexom"><option value="Vinci Energies"><option value="Actemium">
+                </datalist>
+            </div>
+            <div class="form-row">
+                <label class="form-lbl">Meeting Subject</label>
+                <input type="text" id="subject" class="form-inp" placeholder="e.g. Weekly Team Sync…">
+            </div>
+            <div class="form-row">
+                <label class="form-lbl">Reason <em style="opacity:.4;font-style:normal;">(optional)</em></label>
+                <textarea id="description" class="form-inp form-textarea" placeholder="Brief description…"></textarea>
+            </div>
+            <div class="form-row">
+                <label class="form-lbl">Invitees <em style="opacity:.4;font-style:normal;">(comma-separated)</em></label>
+                <input type="text" id="attendees" class="form-inp" placeholder="user@axians.com, …">
+            </div>
+            <div class="form-2col">
+                <div class="form-row">
+                    <label class="form-lbl">Start Time</label>
+                    <input type="datetime-local" id="startTime" class="form-inp">
+                </div>
+                <div class="form-row">
+                    <label class="form-lbl">End Time</label>
+                    <input type="datetime-local" id="endTime" class="form-inp">
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-lbl">Organizer</label>
+                <input type="text" id="displayEmail" class="form-inp" readonly>
+            </div>
+        </div>
+        <div class="modal-panel-footer">
+            <button class="btn-modal-cancel" onclick="closeBookingModal()">Cancel</button>
+            <button class="btn-modal-confirm" onclick="createBooking()">Confirm Booking</button>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!--  AGENDA OVERLAY                        -->
+<!-- ═══════════════════════════════════════ -->
+<div id="agendaOverlay" class="modal-overlay hidden">
+    <div class="modal-panel" style="max-width:500px;">
+        <div class="modal-panel-header">
+            <span class="modal-panel-title">Room Calendar</span>
+            <button class="modal-close-btn" onclick="closeAgenda()">✕</button>
+        </div>
+        <div class="modal-panel-body" id="agendaContent">
+            <div class="occ-agenda-empty">Loading…</div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════ -->
+<!--  AUTH MODAL (pop-up before booking)    -->
+<!-- ═══════════════════════════════════════ -->
+<div id="authGateOverlay" class="modal-overlay hidden">
+    <div class="modal-panel auth-gate-panel">
+        <div class="auth-gate-icon">🔐</div>
+        <div class="auth-gate-title">Sign in to Book</div>
+        <p class="auth-gate-sub">You need to authenticate with your corporate Microsoft account before making a reservation.</p>
+        <button class="btn-modal-confirm auth-gate-btn" onclick="triggerSignInThenBook()">
+            Sign in with Microsoft
+        </button>
+        <button class="btn-modal-cancel" style="margin-top:10px;width:100%;" onclick="closeAuthGate()">Cancel</button>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toastBar" class="toast-bar hidden"></div>
+
+<!-- Tooltip -->
+<div id="timelineTooltip" class="timeline-tooltip">
+    <span id="tooltipSubject"></span>
+    <span id="tooltipTime"></span>
+</div>
+
 <script src="script.js"></script>
 </body>
 </html>
