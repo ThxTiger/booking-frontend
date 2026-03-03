@@ -339,10 +339,16 @@ async function checkForActiveMeeting() {
             return;
         }
 
-        // ACTIVE + CHECKED IN
+      // ACTIVE + CHECKED IN
         if (event.categories?.includes("Checked-In")) {
             setAppState("occupied");
-            stopCountdowns();
+            
+            // FIX: Only kill the check-in timer. Leave the meeting timer alone!
+            if (checkInInterval) { 
+                clearInterval(checkInInterval); 
+                checkInInterval = null; 
+            }
+            
             if (occupied.classList.contains("hidden") && event.id !== manuallyUnlockedEventId) {
                 showMeetingMode(event, displaySubject, displayOrg, startFmt, endFmt);
             }
