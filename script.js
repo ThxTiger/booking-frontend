@@ -697,12 +697,23 @@ async function createBooking() {
         showToast("Please fill in all required fields.", true); return;
     }
 
-    let accessToken = "";
+   let accessToken = "";
     try {
         const account = myMSALObj.getAllAccounts()[0];
+        if (!account) throw new Error("No active account");
         const r = await myMSALObj.acquireTokenSilent({ ...loginRequest, account });
         accessToken = r.accessToken;
-    } catch { showToast("Session expired. Please sign in again.", true); return; }
+    } catch { 
+        // Session expired or missing: Automatically prompt the user to sign in right now
+        try {
+            const response = await myMSALObj.loginPopup(loginRequest);
+            handleLoginSuccess(response.account);
+            accessToken = response.accessToken;
+        } catch (err) {
+            if (err.errorCode !== "user_cancelled") showToast("Authentication failed.", true);
+            return;
+        }
+    }
 
     try {
         const res = await fetch(`${API_URL}/book`, {
