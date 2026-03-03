@@ -152,3 +152,17 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);backgro
 #tooltipTime{font-size:0.7rem;font-family:var(--mono);color:rgba(255,255,255,0.4);}
 ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:4px;}
 .hidden{display:none !important;}.d-none{display:none !important;}
+
+/* ── Agenda modal badges ── */
+.agenda-modal-item.past { opacity: 0.42; }
+.agenda-modal-item.active-now .agenda-modal-time { color: var(--green-light); }
+.agenda-modal-item.active-now .agenda-modal-subject { color: #fff; }
+.agenda-badge {
+    display: inline-block;
+    font-size: 0.56rem; font-weight: 800; letter-spacing: 0.14em;
+    padding: 2px 7px; border-radius: 999px;
+    vertical-align: middle; margin-left: 6px;
+    text-transform: uppercase;
+}
+.agenda-badge.now  { background: var(--green-light); color: #05200e; }
+.agenda-badge.past { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.35); }
