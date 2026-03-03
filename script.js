@@ -755,18 +755,20 @@ async function loadAvailability(email) {
     if (spinner) spinner.style.display = "inline";
 
     const now = new Date();
-    const viewStart = new Date(now);
-    viewStart.setHours(viewStart.getHours() - 2, 0, 0, 0);
-    const viewEnd = new Date(viewStart.getTime() + 12 * 3600000);
+    // Query full day to correctly determine if Room Calendar button should show
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+    const dayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
     try {
         const res = await fetch(`${API_URL}/availability`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room_email: email, start_time: viewStart.toISOString(), end_time: viewEnd.toISOString(), time_zone: "UTC" })
+            body: JSON.stringify({ room_email: email, start_time: dayStart.toISOString(), end_time: dayEnd.toISOString(), time_zone: "UTC" })
         });
         const data = await res.json();
-        renderTimeline(data, viewStart, viewEnd);
+        const hasMeetings = (data?.value?.[0]?.scheduleItems || []).some(i => i.status === "busy");
+        const calBtn = document.getElementById("roomCalendarBtn");
+        if (calBtn) calBtn.style.display = hasMeetings ? "flex" : "none";
     } catch (e) { console.error(e); }
     finally { if (spinner) spinner.style.display = "none"; }
 }
