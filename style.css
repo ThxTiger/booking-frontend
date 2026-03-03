@@ -166,3 +166,109 @@ html,body{width:100%;height:100%;overflow:hidden;font-family:var(--font);backgro
 }
 .agenda-badge.now  { background: var(--green-light); color: #05200e; }
 .agenda-badge.past { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.35); }
+
+/* ══════════════════════════════════════ */
+/*  BOOKING AVAILABILITY STRIP           */
+/* ══════════════════════════════════════ */
+.avail-strip-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.avail-strip-date {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--green-light);
+    letter-spacing: 0.04em;
+}
+.avail-strip-wrap {
+    position: relative;
+    padding-bottom: 20px; /* room for hour labels */
+}
+.avail-strip-track {
+    position: relative;
+    height: 36px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.08);
+    overflow: hidden;
+}
+.avail-strip-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.25);
+}
+.avail-busy-block {
+    position: absolute;
+    top: 4px; bottom: 4px;
+    background: rgba(255,45,74,0.7);
+    border-radius: 4px;
+    cursor: default;
+    transition: background 0.15s;
+}
+.avail-busy-block:hover {
+    background: rgba(255,45,74,0.95);
+}
+.avail-selected-block {
+    position: absolute;
+    top: 3px; bottom: 3px;
+    background: rgba(34,196,110,0.35);
+    border: 1.5px solid var(--green-light);
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 2;
+}
+.avail-selected-block.conflict {
+    background: rgba(255,160,0,0.3);
+    border-color: #ff9800;
+}
+.avail-strip-hours {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 18px;
+}
+.avail-hour-label {
+    position: absolute;
+    transform: translateX(-50%);
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    color: rgba(255,255,255,0.25);
+    white-space: nowrap;
+    bottom: 0;
+}
+.avail-strip-legend {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+}
+.avail-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.68rem;
+    color: rgba(255,255,255,0.35);
+}
+.avail-legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 3px;
+    flex-shrink: 0;
+}
+.avail-legend-dot.busy     { background: rgba(255,45,74,0.7); }
+.avail-legend-dot.selected { background: rgba(34,196,110,0.35); border: 1.5px solid var(--green-light); }
+.avail-legend-dot.free     { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); }
+.avail-conflict-msg {
+    margin-top: 8px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #ff9800;
+    padding: 8px 12px;
+    background: rgba(255,152,0,0.1);
+    border: 1px solid rgba(255,152,0,0.3);
+    border-radius: 8px;
+}
+.avail-conflict-msg.hidden { display: none; }
