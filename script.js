@@ -9,10 +9,15 @@ const msalConfig = {
         authority: "https://login.microsoftonline.com/2b2369a3-0061-401b-97d9-c8c8d92b76f6",
         redirectUri: window.location.origin,
     },
-    // CRITICAL KIOSK FIX: Use localStorage instead of sessionStorage
-    cache: { cacheLocation: "localStorage" } 
+    cache: { cacheLocation: "sessionStorage" }
 };
-const loginRequest = { scopes: ["User.Read", "Calendars.ReadWrite"] };
+
+// Added prompt: "select_account" so the next user is always asked who they are
+const loginRequest = { 
+    scopes: ["User.Read", "Calendars.ReadWrite"],
+    prompt: "select_account" 
+};
+
 const myMSALObj = new msal.PublicClientApplication(msalConfig);
 
 // ── State ──
@@ -53,7 +58,7 @@ function showView(viewId) {
 }
 
 // ═══════════════════════════════════════════
-//  INITIALIZATION & KIOSK ROUTING
+//  INITIALIZATION
 // ═══════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
     initModalTimes();
@@ -70,51 +75,10 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     try {
         await myMSALObj.initialize();
-        const resp = await myMSALObj.handleRedirectPromise();
-        
-        if (resp) {
-            handleLoginSuccess(resp.account);
-        } else {
-            const accounts = myMSALObj.getAllAccounts();
-            if (accounts.length > 0) handleLoginSuccess(accounts[0]);
-        }
-
-        // ── KIOSK ROUTE 1: Resume Booking ──
-        if (localStorage.getItem("pendingBook") === "1") {
-            localStorage.removeItem("pendingBook");
-            const savedRoom = localStorage.getItem("pendingBookRoom");
-            localStorage.removeItem("pendingBookRoom");
-            
-            if (savedRoom !== null && availableRooms[savedRoom]) {
-                const sel = document.getElementById("roomSelect");
-                sel.value = savedRoom;
-                handleRoomChange();
-            }
-            setTimeout(openBookingModal, 400);
-        }
-
-        // ── KIOSK ROUTE 2: Resume End Meeting ──
-        if (localStorage.getItem("pendingEndMeeting") === "1") {
-            localStorage.removeItem("pendingEndMeeting");
-            
-            const savedRoomIdx = localStorage.getItem("pendingEndRoom");
-            const eventId = localStorage.getItem("pendingEndEventId");
-            const allowed = JSON.parse(localStorage.getItem("pendingEndAllowed") || "[]");
-            
-            localStorage.removeItem("pendingEndRoom");
-            localStorage.removeItem("pendingEndEventId");
-            localStorage.removeItem("pendingEndAllowed");
-
-            if (savedRoomIdx !== null && availableRooms[savedRoomIdx]) {
-                document.getElementById("roomSelect").value = savedRoomIdx;
-                const roomEmail = availableRooms[savedRoomIdx].emailAddress;
-                
-                // Allow UI to mount, then execute the secure API call
-                setTimeout(() => {
-                    const activeUser = username || (resp ? resp.account.username : "");
-                    processEndMeetingRedirect(roomEmail, eventId, allowed, activeUser);
-                }, 800);
-            }
+        // Check if already signed in from a previous session
+        const accounts = myMSALObj.getAllAccounts();
+        if (accounts.length > 0) {
+            handleLoginSuccess(accounts[0]);
         }
     } catch (e) { 
         console.error("Auth init error: ", e); 
@@ -141,15 +105,17 @@ function startClock() {
 }
 
 // ═══════════════════════════════════════════
-//  AUTH
+//  AUTH (POPUP FLOW)
 // ═══════════════════════════════════════════
 async function signIn() {
     if (isAuthInProgress) return;
     isAuthInProgress = true;
     try { 
-        await myMSALObj.loginRedirect(loginRequest); 
+        const response = await myMSALObj.loginPopup(loginRequest);
+        handleLoginSuccess(response.account);
     } catch (e) { 
         console.error(e); 
+    } finally { 
         isAuthInProgress = false; 
     }
 }
@@ -162,13 +128,12 @@ function signOut() {
     if (loginBtn) loginBtn.style.display = "inline-block";
     if (sessionTimeout) clearTimeout(sessionTimeout);
     
-    const accounts = myMSALObj.getAllAccounts();
-    if (accounts.length > 0) {
-        myMSALObj.logoutRedirect({ account: accounts[0] });
-    } else {
-        stopCountdowns();
-        checkForActiveMeeting();
-    }
+    // Silently wipe the tablet's local memory instead of triggering the MS Popup
+    sessionStorage.clear();
+    localStorage.clear();
+    
+    stopCountdowns();
+    checkForActiveMeeting();
 }
 
 function handleLoginSuccess(acc) {
@@ -194,7 +159,7 @@ async function getAuthToken() {
 }
 
 // ═══════════════════════════════════════════
-//  AUTH GATE 
+//  AUTH GATE (shown before booking if not logged in)
 // ═══════════════════════════════════════════
 function handleBookClick() {
     if (!username) {
@@ -214,10 +179,13 @@ function closeAuthGate() {
 
 async function triggerSignInThenBook() {
     closeAuthGate();
-    const idx = document.getElementById("roomSelect").value;
-    localStorage.setItem("pendingBook", "1");
-    if (idx !== "") localStorage.setItem("pendingBookRoom", idx);
-    await signIn();
+    try {
+        const response = await myMSALObj.loginPopup(loginRequest);
+        handleLoginSuccess(response.account);
+        openBookingModal();
+    } catch (e) {
+        console.error("Sign in failed before booking: ", e);
+    }
 }
 
 // ═══════════════════════════════════════════
@@ -321,6 +289,7 @@ async function checkForActiveMeeting() {
         lastKnownEventId = cid;
 
         const occupied = document.getElementById("occupiedScreen");
+        const main = document.getElementById("mainScreen");
 
         // NO MEETING
         if (!event) {
@@ -441,7 +410,7 @@ function stopCountdowns() {
 }
 
 // ═══════════════════════════════════════════
-//  CHECK-IN
+//  CHECK-IN (No Auth)
 // ═══════════════════════════════════════════
 async function performCheckIn(roomEmail, eventId, eventDetails) {
     if (checkInInterval) clearInterval(checkInInterval);
@@ -549,7 +518,7 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
 }
 
 // ═══════════════════════════════════════════
-//  +15 MIN EXTENSION
+//  +15 MIN EXTENSION (No Auth Required)
 // ═══════════════════════════════════════════
 async function extendMeeting(minutes) {
     if (!currentLockedEvent) return;
@@ -598,51 +567,39 @@ async function extendMeeting(minutes) {
 }
 
 // ═══════════════════════════════════════════
-//  SECURE END MEETING (Redirect Flow)
+//  SECURE END MEETING (SSO Required)
 // ═══════════════════════════════════════════
 async function secureEndMeeting() {
     if (isAuthInProgress || !currentLockedEvent) return;
 
     const roomIdx = document.getElementById("roomSelect").value;
+    const roomEmail = availableRooms[roomIdx].emailAddress;
+    
     const organizerEmail = currentLockedEvent.organizer?.emailAddress?.address?.toLowerCase() || "";
     const attendees = currentLockedEvent.attendees || [];
     const allowed = [...attendees.map(a => a.emailAddress?.address?.toLowerCase()), organizerEmail];
 
-    // CRITICAL: Save intention to localStorage before navigating away
-    localStorage.setItem("pendingEndMeeting", "1");
-    localStorage.setItem("pendingEndRoom", roomIdx);
-    localStorage.setItem("pendingEndEventId", currentLockedEvent.id);
-    localStorage.setItem("pendingEndAllowed", JSON.stringify(allowed));
-
     isAuthInProgress = true;
     try {
-        await myMSALObj.loginRedirect({ scopes: ["User.Read"], prompt: "select_account" });
-    } catch (e) {
-        console.error(e);
-        isAuthInProgress = false;
-    }
-}
+        const response = await myMSALObj.loginPopup({ scopes: ["User.Read"], prompt: "select_account" });
+        const userEmail = response.account.username.toLowerCase();
 
-// Fired on page reload when returning from Microsoft Login
-async function processEndMeetingRedirect(roomEmail, eventId, allowedEmails, userEmail) {
-    userEmail = userEmail ? userEmail.toLowerCase() : "";
-    
-    if (!allowedEmails.includes(userEmail)) {
-        showToast(`⛔ Access denied — you are not authorized to end this meeting.`, true);
-        setTimeout(signOut, 3500); // Kick them out if not authorized
-        return;
-    }
+        if (!allowed.includes(userEmail)) {
+            showToast(`⛔ Access denied — you are not authorized to end this meeting.`, true);
+            sessionStorage.clear();
+            localStorage.clear();
+            return;
+        }
 
-    try {
         const token = await getAuthToken();
         const res = await fetch(`${API_URL}/end-meeting`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-            body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
+            body: JSON.stringify({ room_email: roomEmail, event_id: currentLockedEvent.id })
         });
 
         if (res.ok) {
-            manuallyUnlockedEventId = eventId;
+            manuallyUnlockedEventId = currentLockedEvent.id;
             currentLockedEvent = null;
             stopCountdowns();
             showOccupied(false);
@@ -653,10 +610,15 @@ async function processEndMeetingRedirect(roomEmail, eventId, allowedEmails, user
         } else {
             showToast("Failed to end meeting.", true);
         }
+        
+        sessionStorage.clear();
+        localStorage.clear();
+        
     } catch (e) {
-        showToast("Network error.", true);
+        if (e.errorCode !== "user_cancelled") showToast("Authentication failed.", true);
+        console.error("End meeting auth error: ", e);
     } finally {
-        setTimeout(signOut, 3000);
+        isAuthInProgress = false;
     }
 }
 
