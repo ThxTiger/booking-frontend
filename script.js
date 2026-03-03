@@ -386,31 +386,15 @@ function stopCountdowns() {
 }
 
 // ═══════════════════════════════════════════
-//  CHECK-IN (SSO Required)
+//  CHECK-IN (No Auth — tap to confirm presence)
 // ═══════════════════════════════════════════
 async function performCheckIn(roomEmail, eventId, eventDetails) {
     if (checkInInterval) clearInterval(checkInInterval);
 
-    const organizerEmail = eventDetails.organizer?.emailAddress?.address?.toLowerCase() || "";
-    const attendees = eventDetails.attendees || [];
-    const allowed = [...attendees.map(a => a.emailAddress?.address?.toLowerCase()), organizerEmail];
-
-    let userEmail = "";
-    try {
-        const r = await myMSALObj.loginPopup({ scopes: ["User.Read"], prompt: "select_account" });
-        userEmail = r.account.username.toLowerCase();
-    } catch { checkForActiveMeeting(); return; }
-
-    if (!allowed.includes(userEmail)) {
-        showToast(`⛔ Access denied — you are not invited to this meeting.`, true);
-        signOut();
-        return;
-    }
-
     try {
         const res = await fetch(`${API_URL}/checkin`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getAuthToken()}` },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
         });
         if (res.ok) {
@@ -726,8 +710,12 @@ function handleRoomChange() {
     // Update sidebar meta
     const floorEl = document.getElementById("roomFloor");
     const deptEl = document.getElementById("roomDept");
+    const capEl = document.getElementById("roomCapacity");
+    const locEl = document.getElementById("roomLocation");
     if (floorEl) floorEl.querySelector("span").textContent = room.floor || "—";
     if (deptEl) deptEl.querySelector("span").textContent = room.department || "—";
+    if (capEl) capEl.querySelector("span").textContent = (room.capacity || 8) + " persons";
+    if (locEl) locEl.querySelector("span").textContent = room.location || "Casablanca HQ";
 
     lastKnownEventId = "init";
     loadAvailability(room.emailAddress);
