@@ -223,13 +223,34 @@
             <div class="form-2col">
                 <div class="form-row">
                     <label class="form-lbl">Start Time</label>
-                    <input type="datetime-local" id="startTime" class="form-inp">
+                    <input type="datetime-local" id="startTime" class="form-inp" oninput="refreshBookingTimeline()">
                 </div>
                 <div class="form-row">
                     <label class="form-lbl">End Time</label>
-                    <input type="datetime-local" id="endTime" class="form-inp">
+                    <input type="datetime-local" id="endTime" class="form-inp" oninput="refreshBookingTimeline()">
                 </div>
             </div>
+
+            <!-- Availability Strip -->
+            <div class="form-row">
+                <div class="avail-strip-header">
+                    <label class="form-lbl">Room Availability</label>
+                    <span class="avail-strip-date" id="availStripDate">Today</span>
+                </div>
+                <div class="avail-strip-wrap">
+                    <div class="avail-strip-track" id="availStripTrack">
+                        <div class="avail-strip-loading">Select a date to load availability…</div>
+                    </div>
+                    <div class="avail-strip-hours" id="availStripHours"></div>
+                </div>
+                <div class="avail-strip-legend">
+                    <span class="avail-legend-item"><span class="avail-legend-dot busy"></span>Busy</span>
+                    <span class="avail-legend-item"><span class="avail-legend-dot selected"></span>Your slot</span>
+                    <span class="avail-legend-item"><span class="avail-legend-dot free"></span>Free</span>
+                </div>
+                <div class="avail-conflict-msg hidden" id="availConflict">⛔ This slot overlaps an existing booking.</div>
+            </div>
+
             <div class="form-row">
                 <label class="form-lbl">Organizer</label>
                 <input type="text" id="displayEmail" class="form-inp" readonly>
