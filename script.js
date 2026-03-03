@@ -187,6 +187,8 @@ function openBookingModal() {
     document.getElementById("displayEmail").value = username;
     initModalTimes();
     document.getElementById("bookingOverlay").classList.remove("hidden");
+    // Load availability strip for the pre-filled date
+    setTimeout(refreshBookingTimeline, 100);
 }
 
 function closeBookingModal() {
@@ -781,6 +783,153 @@ function renderTimeline(data, viewStart, viewEnd) {
 // ═══════════════════════════════════════════
 //  UTILITIES
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  BOOKING AVAILABILITY STRIP
+// ═══════════════════════════════════════════
+let stripFetchTimeout = null;
+let lastStripDate = null;
+let lastStripData = null;
+
+function refreshBookingTimeline() {
+    const startVal = document.getElementById("startTime").value;
+    const endVal   = document.getElementById("endTime").value;
+    if (!startVal) return;
+
+    const startDate = new Date(startVal);
+    const dateKey = startDate.toDateString();
+
+    // Debounce rapid typing
+    clearTimeout(stripFetchTimeout);
+    stripFetchTimeout = setTimeout(async () => {
+        // Re-fetch only if date changed
+        if (dateKey !== lastStripDate) {
+            lastStripDate = dateKey;
+            await fetchStripData(startDate);
+        }
+        renderStrip(startVal, endVal);
+    }, 250);
+}
+
+async function fetchStripData(forDate) {
+    const idx = document.getElementById("roomSelect").value;
+    if (idx === "") return;
+    const roomEmail = availableRooms[idx].emailAddress;
+
+    const dayStart = new Date(forDate.getFullYear(), forDate.getMonth(), forDate.getDate(), 0, 0, 0);
+    const dayEnd   = new Date(forDate.getFullYear(), forDate.getMonth(), forDate.getDate(), 23, 59, 59);
+
+    const track = document.getElementById("availStripTrack");
+    if (track) track.innerHTML = `<div class="avail-strip-loading">Loading…</div>`;
+
+    try {
+        const res = await fetch(`${API_URL}/availability`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                room_email: roomEmail,
+                start_time: dayStart.toISOString(),
+                end_time: dayEnd.toISOString(),
+                time_zone: "UTC"
+            })
+        });
+        const data = await res.json();
+        lastStripData = data?.value?.[0]?.scheduleItems || [];
+
+        // Update date label
+        const dateLabel = document.getElementById("availStripDate");
+        const today = new Date();
+        if (dateLabel) {
+            if (forDate.toDateString() === today.toDateString()) dateLabel.textContent = "Today";
+            else if (forDate.toDateString() === new Date(today.getTime() + 86400000).toDateString()) dateLabel.textContent = "Tomorrow";
+            else dateLabel.textContent = forDate.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+        }
+    } catch (e) {
+        lastStripData = [];
+    }
+}
+
+function renderStrip(startVal, endVal) {
+    const track  = document.getElementById("availStripTrack");
+    const hours  = document.getElementById("availStripHours");
+    const conflict = document.getElementById("availConflict");
+    if (!track) return;
+
+    // Strip spans 7:00 – 22:00 (15 hours)
+    const STRIP_START_H = 7;
+    const STRIP_END_H   = 22;
+    const TOTAL_MINS    = (STRIP_END_H - STRIP_START_H) * 60;
+
+    const baseDate = startVal ? new Date(startVal) : new Date();
+    const stripStart = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), STRIP_START_H, 0, 0);
+    const stripEnd   = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate(), STRIP_END_H, 0, 0);
+
+    track.innerHTML = "";
+
+    // Hour tick labels
+    if (hours) {
+        hours.innerHTML = "";
+        for (let h = STRIP_START_H; h <= STRIP_END_H; h += 2) {
+            const pct = ((h - STRIP_START_H) / (STRIP_END_H - STRIP_START_H)) * 100;
+            const lbl = document.createElement("span");
+            lbl.className = "avail-hour-label";
+            lbl.style.left = pct + "%";
+            lbl.textContent = `${String(h).padStart(2,"0")}:00`;
+            hours.appendChild(lbl);
+        }
+    }
+
+    // Busy blocks
+    let hasConflict = false;
+    const selStart = startVal ? new Date(startVal) : null;
+    const selEnd   = endVal   ? new Date(endVal)   : null;
+
+    (lastStripData || []).forEach(item => {
+        if (item.status !== "busy") return;
+        const bs = new Date(item.start.dateTime + "Z");
+        const be = new Date(item.end.dateTime + "Z");
+        const leftMs  = Math.max(bs - stripStart, 0);
+        const rightMs = Math.min(be - stripStart, TOTAL_MINS * 60000);
+        if (rightMs <= 0 || leftMs >= TOTAL_MINS * 60000) return;
+
+        const leftPct  = (leftMs  / (TOTAL_MINS * 60000)) * 100;
+        const widthPct = ((rightMs - leftMs) / (TOTAL_MINS * 60000)) * 100;
+
+        const block = document.createElement("div");
+        block.className = "avail-busy-block";
+        block.style.left  = leftPct  + "%";
+        block.style.width = widthPct + "%";
+
+        // Tooltip on hover
+        const st = bs.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        const et = be.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        block.title = `${item.subject || "Busy"}: ${st} – ${et}`;
+        track.appendChild(block);
+
+        // Check conflict with selected slot
+        if (selStart && selEnd && bs < selEnd && be > selStart) hasConflict = true;
+    });
+
+    // Selected slot highlight
+    if (selStart && selEnd && selEnd > selStart) {
+        const sleftMs  = Math.max(selStart - stripStart, 0);
+        const srightMs = Math.min(selEnd   - stripStart, TOTAL_MINS * 60000);
+        if (srightMs > 0 && sleftMs < TOTAL_MINS * 60000) {
+            const sleftPct  = (sleftMs  / (TOTAL_MINS * 60000)) * 100;
+            const swidthPct = ((srightMs - sleftMs) / (TOTAL_MINS * 60000)) * 100;
+            const sel = document.createElement("div");
+            sel.className = "avail-selected-block" + (hasConflict ? " conflict" : "");
+            sel.style.left  = sleftPct  + "%";
+            sel.style.width = swidthPct + "%";
+            track.appendChild(sel);
+        }
+    }
+
+    // Conflict warning
+    if (conflict) {
+        conflict.classList.toggle("hidden", !hasConflict);
+    }
+}
+
 function initModalTimes() {
     const now = new Date();
     const offset = now.getTimezoneOffset();
