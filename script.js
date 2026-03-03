@@ -72,10 +72,18 @@ document.addEventListener("DOMContentLoaded", async () => {
         const resp = await myMSALObj.handleRedirectPromise();
         if (resp) {
             handleLoginSuccess(resp.account);
-            // If we were redirected mid-book, open modal
+            // If we were redirected mid-book, restore room selection then open modal
             if (sessionStorage.getItem("pendingBook") === "1") {
                 sessionStorage.removeItem("pendingBook");
-                openBookingModal();
+                const savedRoom = sessionStorage.getItem("pendingBookRoom");
+                sessionStorage.removeItem("pendingBookRoom");
+                if (savedRoom !== null && availableRooms[savedRoom]) {
+                    const sel = document.getElementById("roomSelect");
+                    sel.value = savedRoom;
+                    handleRoomChange();
+                }
+                // Small delay to let room load before opening modal
+                setTimeout(openBookingModal, 300);
             }
         }
     } catch (e) { console.error(e); }
@@ -165,7 +173,10 @@ function closeAuthGate() {
 
 async function triggerSignInThenBook() {
     closeAuthGate();
+    // Save both the pending flag AND the currently selected room index
+    const idx = document.getElementById("roomSelect").value;
     sessionStorage.setItem("pendingBook", "1");
+    if (idx !== "") sessionStorage.setItem("pendingBookRoom", idx);
     await signIn();
 }
 
