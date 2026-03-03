@@ -542,6 +542,9 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
 // ═══════════════════════════════════════════
 //  +15 MIN EXTENSION (No Auth Required)
 // ═══════════════════════════════════════════
+// ═══════════════════════════════════════════
+//  +15 MIN EXTENSION (Phantom Bug Fixed)
+// ═══════════════════════════════════════════
 async function extendMeeting(minutes) {
     if (!currentLockedEvent) return;
 
@@ -554,15 +557,34 @@ async function extendMeeting(minutes) {
         const res = await fetch(`${API_URL}/availability`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room_email: roomEmail, start_time: currentEnd.toISOString(), end_time: newEnd.toISOString(), time_zone: "UTC" })
+            body: JSON.stringify({ 
+                room_email: roomEmail, 
+                start_time: currentEnd.toISOString(), 
+                end_time: newEnd.toISOString(), 
+                time_zone: "UTC" 
+            })
         });
         const data = await res.json();
-        const isBusy = (data?.value?.[0]?.scheduleItems || []).some(i => i.status === "busy");
+        
+        // FIX: Verify the busy block actually overlaps our new gap, 
+        // ignoring boundary-touching events (like the current meeting itself)
+        const isBusy = (data?.value?.[0]?.scheduleItems || []).some(item => {
+            if (item.status !== "busy") return false;
+            
+            const itemStart = new Date(item.start.dateTime + "Z");
+            const itemEnd = new Date(item.end.dateTime + "Z");
+            
+            // True Overlap Formula: (StartA < EndB) and (EndA > StartB)
+            return (itemStart < newEnd && itemEnd > currentEnd);
+        });
+
         if (isBusy) {
             showToast("⛔ Cannot extend — another meeting follows immediately.", true);
             return;
         }
-    } catch { }
+    } catch (e) {
+        console.error("Availability check failed: ", e);
+    }
 
     try {
         const res = await fetch(`${API_URL}/extend-meeting`, {
@@ -585,9 +607,10 @@ async function extendMeeting(minutes) {
             const err = await res.json().catch(() => ({}));
             showToast(err.detail || "Extension failed.", true);
         }
-    } catch (e) { showToast("Network error.", true); }
+    } catch (e) { 
+        showToast("Network error.", true); 
+    }
 }
-
 // ═══════════════════════════════════════════
 //  SECURE END MEETING (Redirect Flow)
 // ═══════════════════════════════════════════
