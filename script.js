@@ -434,7 +434,7 @@ function showMeetingMode(event, subject, organizer, startFmt, endFmt) {
 
     startMeetingEndTimer(event.end.dateTime);
     updateEndsIn(new Date(event.end.dateTime + "Z"));
-    loadOccupiedAgenda(availableRooms[document.getElementById("roomSelect").value]?.emailAddress);
+    loadOccupiedAgenda(availableRooms[document.getElementById("roomSelect").value]?.emailAddress, event.end.dateTime);
 
     if (sessionTimeout) clearTimeout(sessionTimeout); // Don't auto-logout while in meeting
 }
@@ -466,23 +466,31 @@ function startMeetingEndTimer(endTimeStr) {
     }, 1000);
 }
 
-async function loadOccupiedAgenda(roomEmail) {
+async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
     if (!roomEmail) return;
     const list = document.getElementById("occAgenda");
     if (!list) return;
 
     try {
-        const now = new Date();
-        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59);
+        // Start window = end of current meeting so we only get TRULY upcoming ones
+        const windowStart = currentMeetingEndStr
+            ? new Date(currentMeetingEndStr + "Z")
+            : new Date();
+        const windowEnd = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate(), 23, 59);
+
         const res = await fetch(`${API_URL}/availability`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ room_email: roomEmail, start_time: now.toISOString(), end_time: end.toISOString(), time_zone: "UTC" })
+            body: JSON.stringify({
+                room_email: roomEmail,
+                start_time: windowStart.toISOString(),
+                end_time: windowEnd.toISOString(),
+                time_zone: "UTC"
+            })
         });
         const data = await res.json();
-        const items = (data?.value?.[0]?.scheduleItems || []).filter(i => i.status === "busy");
-        // Skip the current meeting (first one)
-        const upcoming = items.slice(1);
+        // No slice needed — window starts after current meeting ends
+        const upcoming = (data?.value?.[0]?.scheduleItems || []).filter(i => i.status === "busy");
 
         if (upcoming.length === 0) {
             list.innerHTML = `<div class="occ-agenda-empty">No more meetings today.</div>`;
