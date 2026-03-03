@@ -69,14 +69,24 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     try {
         await myMSALObj.initialize();
-        // Check if already signed in from a previous session
-        const accounts = myMSALObj.getAllAccounts();
-        if (accounts.length > 0) {
-            handleLoginSuccess(accounts[0]);
+        const resp = await myMSALObj.handleRedirectPromise();
+        if (resp) {
+            handleLoginSuccess(resp.account);
+            // If we were redirected mid-book, restore room selection then open modal
+            if (sessionStorage.getItem("pendingBook") === "1") {
+                sessionStorage.removeItem("pendingBook");
+                const savedRoom = sessionStorage.getItem("pendingBookRoom");
+                sessionStorage.removeItem("pendingBookRoom");
+                if (savedRoom !== null && availableRooms[savedRoom]) {
+                    const sel = document.getElementById("roomSelect");
+                    sel.value = savedRoom;
+                    handleRoomChange();
+                }
+                // Small delay to let room load before opening modal
+                setTimeout(openBookingModal, 300);
+            }
         }
-    } catch (e) { 
-        console.error("Auth init error: ", e); 
-    }
+    } catch (e) { console.error(e); }
 });
 
 // ═══════════════════════════════════════════
@@ -99,19 +109,14 @@ function startClock() {
 }
 
 // ═══════════════════════════════════════════
-//  AUTH (POPUP FLOW)
+//  AUTH
 // ═══════════════════════════════════════════
 async function signIn() {
     if (isAuthInProgress) return;
     isAuthInProgress = true;
-    try { 
-        const response = await myMSALObj.loginPopup(loginRequest);
-        handleLoginSuccess(response.account);
-    } catch (e) { 
-        console.error(e); 
-    } finally { 
-        isAuthInProgress = false; 
-    }
+    try { await myMSALObj.loginRedirect(loginRequest); }
+    catch (e) { console.error(e); }
+    finally { isAuthInProgress = false; }
 }
 
 function signOut() {
@@ -121,14 +126,6 @@ function signOut() {
     if (badge) badge.style.display = "none";
     if (loginBtn) loginBtn.style.display = "inline-block";
     if (sessionTimeout) clearTimeout(sessionTimeout);
-    
-    // Clear MSAL Cache locally
-    const accounts = myMSALObj.getAllAccounts();
-    if (accounts.length > 0) {
-        // Use logout popup to properly kill the MS session without redirecting the main window
-        myMSALObj.logoutPopup({ account: accounts[0] }).catch(console.error);
-    }
-    
     stopCountdowns();
     checkForActiveMeeting();
 }
@@ -176,13 +173,11 @@ function closeAuthGate() {
 
 async function triggerSignInThenBook() {
     closeAuthGate();
-    try {
-        const response = await myMSALObj.loginPopup(loginRequest);
-        handleLoginSuccess(response.account);
-        openBookingModal();
-    } catch (e) {
-        console.error("Sign in failed before booking: ", e);
-    }
+    // Save both the pending flag AND the currently selected room index
+    const idx = document.getElementById("roomSelect").value;
+    sessionStorage.setItem("pendingBook", "1");
+    if (idx !== "") sessionStorage.setItem("pendingBookRoom", idx);
+    await signIn();
 }
 
 // ═══════════════════════════════════════════
@@ -192,6 +187,7 @@ function openBookingModal() {
     document.getElementById("displayEmail").value = username;
     initModalTimes();
     document.getElementById("bookingOverlay").classList.remove("hidden");
+    // Load availability strip for the pre-filled date
     setTimeout(refreshBookingTimeline, 100);
 }
 
@@ -215,6 +211,7 @@ async function openAgenda() {
 
     try {
         const now = new Date();
+        // Query full day from midnight so past + current + future all show
         const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
         const dayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
         const res = await fetch(`${API_URL}/availability`, {
@@ -279,6 +276,7 @@ async function checkForActiveMeeting() {
         if (res.status === 401) return;
         const event = await res.json();
 
+        // Timeline auto-refresh on change
         const cid = event ? event.id : "free";
         if (lastKnownEventId !== "init" && lastKnownEventId !== cid) {
             loadAvailability(roomEmail);
@@ -286,8 +284,9 @@ async function checkForActiveMeeting() {
         lastKnownEventId = cid;
 
         const occupied = document.getElementById("occupiedScreen");
+        const main = document.getElementById("mainScreen");
 
-        // NO MEETING
+        // ── NO MEETING ──
         if (!event) {
             setAppState("available");
             showOccupied(false);
@@ -308,9 +307,11 @@ async function checkForActiveMeeting() {
             return;
         }
 
+        // Build clean display subject
         let displaySubject = event.subject || "Meeting";
         let displayOrg = event.organizer?.emailAddress?.name || "Unknown";
 
+        // If privacy-masked, preserve what's already on screen
         if (event.subject === "Busy" && !occupied.classList.contains("hidden")) {
             const existing = document.getElementById("occSubject").textContent;
             if (existing && existing !== "—") displaySubject = existing;
@@ -323,7 +324,7 @@ async function checkForActiveMeeting() {
         const startFmt = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const endFmt = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-        // FUTURE
+        // ── FUTURE ──
         if (now < start) {
             setAppState("available");
             showOccupied(false);
@@ -335,7 +336,7 @@ async function checkForActiveMeeting() {
             return;
         }
 
-        // ACTIVE + CHECKED IN
+        // ── ACTIVE + CHECKED IN → RED ──
         if (event.categories?.includes("Checked-In")) {
             setAppState("occupied");
             stopCountdowns();
@@ -345,7 +346,7 @@ async function checkForActiveMeeting() {
             return;
         }
 
-        // ACTIVE + PENDING
+        // ── ACTIVE + PENDING ──
         if (event.id !== manuallyUnlockedEventId) manuallyUnlockedEventId = null;
         setAppState("pending");
         showOccupied(false);
@@ -406,7 +407,7 @@ function stopCountdowns() {
 }
 
 // ═══════════════════════════════════════════
-//  CHECK-IN (No Auth)
+//  CHECK-IN (No Auth — tap to confirm presence)
 // ═══════════════════════════════════════════
 async function performCheckIn(roomEmail, eventId, eventDetails) {
     if (checkInInterval) clearInterval(checkInInterval);
@@ -445,7 +446,7 @@ function showMeetingMode(event, subject, organizer, startFmt, endFmt) {
     updateEndsIn(new Date(event.end.dateTime + "Z"));
     loadOccupiedAgenda(availableRooms[document.getElementById("roomSelect").value]?.emailAddress, event.end.dateTime);
 
-    if (sessionTimeout) clearTimeout(sessionTimeout); 
+    if (sessionTimeout) clearTimeout(sessionTimeout); // Don't auto-logout while in meeting
 }
 
 function updateEndsIn(endDate) {
@@ -481,7 +482,10 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
     if (!list) return;
 
     try {
-        const windowStart = currentMeetingEndStr ? new Date(currentMeetingEndStr + "Z") : new Date();
+        // Start window = end of current meeting so we only get TRULY upcoming ones
+        const windowStart = currentMeetingEndStr
+            ? new Date(currentMeetingEndStr + "Z")
+            : new Date();
         const windowEnd = new Date(windowStart.getFullYear(), windowStart.getMonth(), windowStart.getDate(), 23, 59);
 
         const res = await fetch(`${API_URL}/availability`, {
@@ -495,6 +499,7 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
             })
         });
         const data = await res.json();
+        // No slice needed — window starts after current meeting ends
         const upcoming = (data?.value?.[0]?.scheduleItems || []).filter(i => i.status === "busy");
 
         if (upcoming.length === 0) {
@@ -514,7 +519,7 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
 }
 
 // ═══════════════════════════════════════════
-//  +15 MIN EXTENSION (No Auth)
+//  +15 MIN EXTENSION (No Auth Required)
 // ═══════════════════════════════════════════
 async function extendMeeting(minutes) {
     if (!currentLockedEvent) return;
@@ -524,6 +529,7 @@ async function extendMeeting(minutes) {
     const currentEnd = new Date(currentLockedEvent.end.dateTime + "Z");
     const newEnd = new Date(currentEnd.getTime() + minutes * 60000);
 
+    // Check adjacent slot availability
     try {
         const res = await fetch(`${API_URL}/availability`, {
             method: "POST",
@@ -538,6 +544,7 @@ async function extendMeeting(minutes) {
         }
     } catch { }
 
+    // Call backend extend
     try {
         const res = await fetch(`${API_URL}/extend-meeting`, {
             method: "POST",
@@ -563,62 +570,49 @@ async function extendMeeting(minutes) {
 }
 
 // ═══════════════════════════════════════════
-//  SECURE END MEETING (Popup Flow)
+//  SECURE END MEETING (SSO Required)
 // ═══════════════════════════════════════════
 async function secureEndMeeting() {
     if (isAuthInProgress || !currentLockedEvent) return;
 
-    const roomIdx = document.getElementById("roomSelect").value;
-    const roomEmail = availableRooms[roomIdx].emailAddress;
-    
     const organizerEmail = currentLockedEvent.organizer?.emailAddress?.address?.toLowerCase() || "";
     const attendees = currentLockedEvent.attendees || [];
     const allowed = [...attendees.map(a => a.emailAddress?.address?.toLowerCase()), organizerEmail];
 
+    const roomIdx = document.getElementById("roomSelect").value;
+    const roomEmail = availableRooms[roomIdx].emailAddress;
+    const eventId = currentLockedEvent.id;
+
     isAuthInProgress = true;
     try {
-        // Trigger Popup
-        const response = await myMSALObj.loginPopup({ scopes: ["User.Read"], prompt: "select_account" });
-        const userEmail = response.account.username.toLowerCase();
+        const r = await myMSALObj.loginPopup({ scopes: ["User.Read"], prompt: "select_account" });
+        const userEmail = r.account.username.toLowerCase();
 
-        // Validate Authorization
         if (!allowed.includes(userEmail)) {
             showToast(`⛔ Access denied — you are not authorized to end this meeting.`, true);
-            // Sign out the unauthorized user immediately
-            myMSALObj.logoutPopup({ account: response.account }).catch(console.error);
             return;
         }
 
-        // Execute API call
-        const token = await getAuthToken();
         const res = await fetch(`${API_URL}/end-meeting`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
-            body: JSON.stringify({ room_email: roomEmail, event_id: currentLockedEvent.id })
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${await getAuthToken()}` },
+            body: JSON.stringify({ room_email: roomEmail, event_id: eventId })
         });
 
         if (res.ok) {
-            manuallyUnlockedEventId = currentLockedEvent.id;
+            manuallyUnlockedEventId = eventId;
             currentLockedEvent = null;
             stopCountdowns();
             showOccupied(false);
             setAppState("available");
             showView("viewAvailable");
             loadAvailability(roomEmail);
-            showToast("✅ Meeting ended successfully.");
         } else {
             showToast("Failed to end meeting.", true);
         }
-        
-        // Log out securely after ending
-        myMSALObj.logoutPopup({ account: response.account }).catch(console.error);
-        
     } catch (e) {
         if (e.errorCode !== "user_cancelled") showToast("Authentication failed.", true);
-        console.error("End meeting auth error: ", e);
-    } finally {
-        isAuthInProgress = false;
-    }
+    } finally { isAuthInProgress = false; }
 }
 
 // ═══════════════════════════════════════════
@@ -675,6 +669,7 @@ async function createBooking() {
 }
 
 function showBookingSuccess(subject, filiale, timeRange, invitees) {
+    // Build a full-screen success flash then auto-dismiss
     const overlay = document.createElement("div");
     overlay.style.cssText = `
         position:fixed;inset:0;z-index:9999;
@@ -688,10 +683,10 @@ function showBookingSuccess(subject, filiale, timeRange, invitees) {
         <div style="font-size:1.8rem;font-weight:800;color:#fff;margin-bottom:6px;">Booking Confirmed</div>
         <div style="font-size:0.9rem;color:rgba(255,255,255,.4);margin-bottom:32px;">Added to your Outlook calendar.</div>
         <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:24px 36px;text-align:left;min-width:280px;line-height:2.2;font-size:.9rem;color:rgba(255,255,255,.75);">
-            <div><strong style="color:#22c46e;">Subject</strong>  ${subject}</div>
-            <div><strong style="color:#22c46e;">Unit</strong>     ${filiale}</div>
-            <div><strong style="color:#22c46e;">Time</strong>     ${timeRange}</div>
-            <div><strong style="color:#22c46e;">Invitees</strong> ${invitees || "None"}</div>
+            <div><strong style="color:#22c46e;">Subject</strong>&nbsp;&nbsp;${subject}</div>
+            <div><strong style="color:#22c46e;">Unit</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${filiale}</div>
+            <div><strong style="color:#22c46e;">Time</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${timeRange}</div>
+            <div><strong style="color:#22c46e;">Invitees</strong>&nbsp;${invitees || "None"}</div>
         </div>
         <button id="successClose" style="margin-top:28px;padding:12px 40px;border-radius:999px;background:#22c46e;color:#05200e;border:none;font-family:'Sora',sans-serif;font-weight:700;font-size:0.95rem;cursor:pointer;">
             OK · Closing in <span id="successCountdown">5</span>s
@@ -709,7 +704,7 @@ function showBookingSuccess(subject, filiale, timeRange, invitees) {
 
     const close = () => {
         if (document.body.contains(overlay)) document.body.removeChild(overlay);
-        signOut(); 
+        signOut(); // Auto-logout after booking (kiosk practice)
     };
 
     document.getElementById("successClose").onclick = () => { clearInterval(iv); close(); };
@@ -741,6 +736,7 @@ function handleRoomChange() {
     if (idx === "") return;
     const room = availableRooms[idx];
 
+    // Update sidebar meta
     const floorEl = document.getElementById("roomFloor");
     const deptEl = document.getElementById("roomDept");
     const capEl = document.getElementById("roomCapacity");
@@ -761,6 +757,7 @@ async function loadAvailability(email) {
     if (spinner) spinner.style.display = "inline";
 
     const now = new Date();
+    // Query full day to correctly determine if Room Calendar button should show
     const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
     const dayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
@@ -778,6 +775,14 @@ async function loadAvailability(email) {
     finally { if (spinner) spinner.style.display = "none"; }
 }
 
+function renderTimeline(data, viewStart, viewEnd) {
+    // Timeline is embedded in the agenda overlay only; main screen doesn't need it
+    // (It's available via openAgenda)
+}
+
+// ═══════════════════════════════════════════
+//  UTILITIES
+// ═══════════════════════════════════════════
 // ═══════════════════════════════════════════
 //  BOOKING AVAILABILITY STRIP
 // ═══════════════════════════════════════════
@@ -793,8 +798,10 @@ function refreshBookingTimeline() {
     const startDate = new Date(startVal);
     const dateKey = startDate.toDateString();
 
+    // Debounce rapid typing
     clearTimeout(stripFetchTimeout);
     stripFetchTimeout = setTimeout(async () => {
+        // Re-fetch only if date changed
         if (dateKey !== lastStripDate) {
             lastStripDate = dateKey;
             await fetchStripData(startDate);
@@ -828,6 +835,7 @@ async function fetchStripData(forDate) {
         const data = await res.json();
         lastStripData = data?.value?.[0]?.scheduleItems || [];
 
+        // Update date label
         const dateLabel = document.getElementById("availStripDate");
         const today = new Date();
         if (dateLabel) {
@@ -846,6 +854,7 @@ function renderStrip(startVal, endVal) {
     const conflict = document.getElementById("availConflict");
     if (!track) return;
 
+    // Strip spans 7:00 – 22:00 (15 hours)
     const STRIP_START_H = 7;
     const STRIP_END_H   = 22;
     const TOTAL_MINS    = (STRIP_END_H - STRIP_START_H) * 60;
@@ -856,6 +865,7 @@ function renderStrip(startVal, endVal) {
 
     track.innerHTML = "";
 
+    // Hour tick labels
     if (hours) {
         hours.innerHTML = "";
         for (let h = STRIP_START_H; h <= STRIP_END_H; h += 2) {
@@ -868,6 +878,7 @@ function renderStrip(startVal, endVal) {
         }
     }
 
+    // Busy blocks
     let hasConflict = false;
     const selStart = startVal ? new Date(startVal) : null;
     const selEnd   = endVal   ? new Date(endVal)   : null;
@@ -888,14 +899,17 @@ function renderStrip(startVal, endVal) {
         block.style.left  = leftPct  + "%";
         block.style.width = widthPct + "%";
 
+        // Tooltip on hover
         const st = bs.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const et = be.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         block.title = `${item.subject || "Busy"}: ${st} – ${et}`;
         track.appendChild(block);
 
+        // Check conflict with selected slot
         if (selStart && selEnd && bs < selEnd && be > selStart) hasConflict = true;
     });
 
+    // Selected slot highlight
     if (selStart && selEnd && selEnd > selStart) {
         const sleftMs  = Math.max(selStart - stripStart, 0);
         const srightMs = Math.min(selEnd   - stripStart, TOTAL_MINS * 60000);
@@ -910,6 +924,7 @@ function renderStrip(startVal, endVal) {
         }
     }
 
+    // Conflict warning
     if (conflict) {
         conflict.classList.toggle("hidden", !hasConflict);
     }
