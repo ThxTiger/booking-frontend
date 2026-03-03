@@ -209,14 +209,16 @@ async function openAgenda() {
 
     try {
         const now = new Date();
-        const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59);
+        // Query full day from midnight so past + current + future all show
+        const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        const dayEnd   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
         const res = await fetch(`${API_URL}/availability`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 room_email: roomEmail,
-                start_time: now.toISOString(),
-                end_time: end.toISOString(),
+                start_time: dayStart.toISOString(),
+                end_time: dayEnd.toISOString(),
                 time_zone: "UTC"
             })
         });
@@ -225,18 +227,24 @@ async function openAgenda() {
         const busy = items.filter(i => i.status === "busy");
 
         if (busy.length === 0) {
-            content.innerHTML = `<div class="occ-agenda-empty">No more meetings today.</div>`;
+            content.innerHTML = `<div class="occ-agenda-empty">No meetings scheduled today.</div>`;
             return;
         }
 
         content.innerHTML = busy.map(item => {
-            const s = new Date(item.start.dateTime + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-            const e = new Date(item.end.dateTime + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            const itemStart = new Date(item.start.dateTime + "Z");
+            const itemEnd   = new Date(item.end.dateTime + "Z");
+            const s = itemStart.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            const e = itemEnd.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+            const isNow  = now >= itemStart && now < itemEnd;
+            const isPast = now >= itemEnd;
+            const badge  = isNow  ? `<span class="agenda-badge now">NOW</span>` :
+                           isPast ? `<span class="agenda-badge past">DONE</span>` : "";
             return `
-                <div class="agenda-modal-item">
+                <div class="agenda-modal-item${isPast ? " past" : isNow ? " active-now" : ""}">
                     <div class="agenda-modal-time">${s} – ${e}</div>
-                    <div>
-                        <div class="agenda-modal-subject">${item.subject || "Meeting"}</div>
+                    <div style="flex:1">
+                        <div class="agenda-modal-subject">${item.subject || "Meeting"} ${badge}</div>
                     </div>
                 </div>`;
         }).join("");
