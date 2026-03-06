@@ -11,12 +11,8 @@
 </head>
 <body class="state-available">
 
-<!-- ═══════════════════════════════════════ -->
-<!--  MAIN SCREEN (Available / Pending)     -->
-<!-- ═══════════════════════════════════════ -->
 <div id="mainScreen" class="kiosk-root">
 
-    <!-- LEFT PANEL — Room Identity -->
     <div class="panel-left">
         <div class="room-icon-wrap">
             <div class="room-icon">
@@ -71,10 +67,8 @@
         </div>
     </div>
 
-    <!-- RIGHT PANEL — Dynamic Content -->
     <div class="panel-right">
 
-        <!-- Auth corner -->
         <div class="auth-corner">
             <div id="userBadge" class="user-badge-small" style="display:none;">
                 <div class="user-dot"></div>
@@ -85,7 +79,6 @@
         </div>
         <div id="loadingSpinner" class="sync-indicator" style="display:none;">Syncing…</div>
 
-        <!-- ── AVAILABLE ── -->
         <div id="viewAvailable" class="state-view active">
             <div class="state-hero-label">Available</div>
             <p class="state-sub">This room is free and ready to use.</p>
@@ -108,7 +101,6 @@
             </div>
         </div>
 
-        <!-- ── PENDING CHECK-IN ── -->
         <div id="viewPending" class="state-view">
             <div class="pending-badge">⚠ CHECK-IN REQUIRED</div>
             <div class="state-hero-label" id="pendingSubject" style="font-size:2.4rem;">Meeting</div>
@@ -123,7 +115,6 @@
             <button class="btn-checkin" id="realCheckInBtn">✅ &nbsp;Confirm Presence</button>
         </div>
 
-        <!-- ── FUTURE MEETING ── -->
         <div id="viewFuture" class="state-view">
             <div class="state-hero-label">Available</div>
             <p class="state-sub">Next meeting starts soon.</p>
@@ -145,9 +136,6 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════ -->
-<!--  OCCUPIED SCREEN (Red)                 -->
-<!-- ═══════════════════════════════════════ -->
 <div id="occupiedScreen" class="occupied-root hidden">
     <div class="occ-left">
         <div class="occ-status-label">
@@ -190,9 +178,6 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════ -->
-<!--  BOOKING OVERLAY                       -->
-<!-- ═══════════════════════════════════════ -->
 <div id="bookingOverlay" class="modal-overlay hidden">
     <div class="modal-panel">
         <div class="modal-panel-header">
@@ -205,13 +190,19 @@
             <button class="modal-close-btn" onclick="closeBookingModal()">✕</button>
         </div>
         <div class="modal-panel-body">
+            
             <div class="form-row">
                 <label class="form-lbl">Business Unit</label>
-                <input type="text" id="filiale" class="form-inp" placeholder="Axians, Cegelec, Omexom…" list="filialeOpts">
-                <datalist id="filialeOpts">
-                    <option value="Axians"><option value="Cegelec">
-                    <option value="Omexom"><option value="Vinci Energies"><option value="Actemium">
-                </datalist>
+                <input 
+                    type="text" 
+                    id="filiale" 
+                    class="form-inp" 
+                    placeholder="Axians, Cegelec, Omexom…" 
+                    autocomplete="nope"
+                    role="presentation"
+                    data-lpignore="true"
+                    spellcheck="false"
+                >
             </div>
             <div class="form-row">
                 <label class="form-lbl">Meeting Subject</label>
@@ -242,7 +233,6 @@
                 </div>
             </div>
 
-            <!-- Availability Strip -->
             <div class="form-row">
                 <div class="avail-strip-header">
                     <label class="form-lbl">Room Availability</label>
@@ -274,9 +264,6 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════ -->
-<!--  AGENDA OVERLAY                        -->
-<!-- ═══════════════════════════════════════ -->
 <div id="agendaOverlay" class="modal-overlay hidden">
     <div class="modal-panel" style="max-width:500px;">
         <div class="modal-panel-header">
@@ -289,9 +276,6 @@
     </div>
 </div>
 
-<!-- ═══════════════════════════════════════ -->
-<!--  AUTH MODAL (pop-up before booking)    -->
-<!-- ═══════════════════════════════════════ -->
 <div id="authGateOverlay" class="modal-overlay hidden">
     <div class="modal-panel auth-gate-panel">
         <div class="auth-gate-icon">🔐</div>
@@ -304,10 +288,8 @@
     </div>
 </div>
 
-<!-- Toast -->
 <div id="toastBar" class="toast-bar hidden"></div>
 
-<!-- Tooltip -->
 <div id="timelineTooltip" class="timeline-tooltip">
     <span id="tooltipSubject"></span>
     <span id="tooltipTime"></span>
