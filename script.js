@@ -95,13 +95,15 @@ function playMeetingEndWarning() {
 // ═══════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
     
-    // --- KILL AUTOCOMPLETE ---
+    // --- KILL AUTOCOMPLETE & DATALIST ARROWS ---
     document.querySelectorAll("input").forEach(input => {
         input.setAttribute("autocomplete", "new-password");
         input.setAttribute("data-lpignore", "true"); 
         input.setAttribute("spellcheck", "false");
+        // CECI TUE LA FLÈCHE ET LES SUGGESTIONS DE LA BALISE <datalist>
+        input.removeAttribute("list"); 
     });
-    // -----------------------------------------
+    // -------------------------------------------
 
     initModalTimes();
     startClock();
@@ -261,7 +263,27 @@ function closeAuthGate() {
 async function triggerSignInThenBook() {
     closeAuthGate();
     const idx = document.getElementById("roomSelect").value;
-    if (idx !== "") localStorage.setItem("pendingBookRoom", idx);
+    
+    if (idx !== "") {
+        localStorage.setItem("pendingBookRoom", idx);
+        
+        // --- NOUVEAU : SAUVEGARDE ANTI-AFK ---
+        // On aspire tout ce qui a été tapé dans le formulaire juste avant de rediriger
+        const subj = document.getElementById("subject") ? document.getElementById("subject").value.trim() : "";
+        const fil = document.getElementById("filiale") ? document.getElementById("filiale").value.trim() : "";
+        const desc = document.getElementById("description") ? document.getElementById("description").value.trim() : "";
+        const att = document.getElementById("attendees") ? document.getElementById("attendees").value.trim() : "";
+        const st = document.getElementById("startTime") ? document.getElementById("startTime").value : "";
+        const et = document.getElementById("endTime") ? document.getElementById("endTime").value : "";
+        
+        if (subj) localStorage.setItem("pbSubj", subj);
+        if (fil) localStorage.setItem("pbFil", fil);
+        if (desc) localStorage.setItem("pbDesc", desc);
+        if (att) localStorage.setItem("pbAtt", att);
+        if (st) localStorage.setItem("pbStart", st);
+        if (et) localStorage.setItem("pbEnd", et);
+    }
+    
     await signIn();
 }
 
@@ -404,6 +426,7 @@ async function checkForActiveMeeting() {
         const startFmt = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const endFmt = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+        // FUTURE BLOCK + TTS WARNING
         if (now < start) {
             setAppState("available");
             showOccupied(false);
@@ -607,7 +630,7 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
 }
 
 // ═══════════════════════════════════════════
-//  +15 MIN EXTENSION (Phantom Bug Fixed)
+//  +15 MIN EXTENSION
 // ═══════════════════════════════════════════
 async function extendMeeting(minutes) {
     if (!currentLockedEvent) return;
