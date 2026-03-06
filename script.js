@@ -31,7 +31,8 @@ let isAuthInProgress = false;
 let manuallyUnlockedEventId = null;
 let lastKnownEventId = "init";
 let currentAppState = "available"; 
-let announcedMeetings = []; // Tracks which meetings have already triggered the audio warning
+let announcedMeetings = []; // Historique des alertes d'éviction (avant réunion)
+let announcedEndings = [];  // Historique des alertes de fin (pendant réunion)
 
 // ═══════════════════════════════════════════
 //  STATE MACHINE
@@ -58,31 +59,50 @@ function showView(viewId) {
 }
 
 // ═══════════════════════════════════════════
-//  AUDIO WARNING SYSTEM (TTS) - DYNAMIC TIME
+//  AUDIO WARNING SYSTEMS (MP3)
 // ═══════════════════════════════════════════
+// 1. Alerte pour faire sortir les gens avant une réunion entrante
 function playEvictionWarning(minutes) {
-    const minText = minutes > 1 ? "minutes" : "minute";
-    
-    const message = new SpeechSynthesisUtterance();
-    message.text = `Attention s'il vous plaît. Une réunion programmée va commencer dans ${minutes} ${minText}. Merci de préparer la libération de la salle.`;
-    message.lang = "fr-FR";
-    message.rate = 0.85; 
-    
-    window.speechSynthesis.speak(message);
+    let audioFileName = '';
 
+    // If 14 or 15 mins remaining, play the "15 minutes" audio
+    if (minutes >= 14) {
+        audioFileName = './alerte-15min.mp3';
+    } 
+    // If suddenly booked and less than 14 mins remaining, play "imminent" audio
+    else {
+        audioFileName = './alerte-imminente.mp3';
+    }
+
+    const audio = new Audio(audioFileName);
+    audio.play().catch(e => console.error("Audio blocked by Kiosk:", e));
+
+    // Rappel après 10 secondes
     setTimeout(() => {
-        const message2 = new SpeechSynthesisUtterance();
-        message2.text = `Rappel. La salle est réservée et la réunion commence dans ${minutes} ${minText}. Merci.`;
-        message2.lang = "fr-FR";
-        message2.rate = 0.85;
-        window.speechSynthesis.speak(message2);
+        const audioRappel = new Audio(audioFileName);
+        audioRappel.play().catch(e => console.error("Audio blocked by Kiosk:", e));
     }, 10000);
+}
+
+// 2. Alerte 5 min avant la fin de la réunion actuelle
+function playMeetingEndWarning() {
+    const audio = new Audio('./alerte-5min.mp3');
+    audio.play().catch(e => console.error("Audio blocked by Kiosk:", e));
 }
 
 // ═══════════════════════════════════════════
 //  INITIALIZATION & REDIRECT ROUTING
 // ═══════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
+    
+    // --- KILL AUTOCOMPLETE ---
+    document.querySelectorAll("input").forEach(input => {
+        input.setAttribute("autocomplete", "new-password");
+        input.setAttribute("data-lpignore", "true"); 
+        input.setAttribute("spellcheck", "false");
+    });
+    // -----------------------------------------
+
     initModalTimes();
     startClock();
     await fetchRooms();
@@ -101,7 +121,7 @@ document.addEventListener("DOMContentLoaded", async () => {
         if (redirectResponse) {
             handleLoginSuccess(redirectResponse.account);
             
-            // ── RESUME BOOKING (With saved form data) ──
+            // ── RESUME BOOKING ──
             const pendingRoom = localStorage.getItem("pendingBookRoom");
             if (pendingRoom !== null) {
                 document.getElementById("roomSelect").value = pendingRoom;
@@ -110,7 +130,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                 
                 setTimeout(() => {
                     openBookingModal();
-                    // Restore typed data so the user doesn't have to type it again
                     if (localStorage.getItem("pbSubj")) document.getElementById("subject").value = localStorage.getItem("pbSubj");
                     if (localStorage.getItem("pbFil")) document.getElementById("filiale").value = localStorage.getItem("pbFil");
                     if (localStorage.getItem("pbDesc")) document.getElementById("description").value = localStorage.getItem("pbDesc");
@@ -385,7 +404,6 @@ async function checkForActiveMeeting() {
         const startFmt = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const endFmt = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-        // FUTURE BLOCK + TTS WARNING
         if (now < start) {
             setAppState("available");
             showOccupied(false);
@@ -395,12 +413,10 @@ async function checkForActiveMeeting() {
             startCountdown(start, "futureTimer", "STARTING…");
             updateNextMeetingPreview({ subject: displaySubject, startFmt, endFmt });
             
-            // Audio Trigger: Calculate exact minutes remaining
+            // --- EVICTION WARNING LOGIC ---
             const timeToStartMins = Math.round((start.getTime() - now.getTime()) / 60000);
-            
             if (timeToStartMins <= 15 && timeToStartMins > 0 && !announcedMeetings.includes(event.id)) {
                 announcedMeetings.push(event.id);
-                // Pass the exact rounded minutes to the TTS function
                 playEvictionWarning(timeToStartMins);
             }
             return;
@@ -526,8 +542,16 @@ function updateEndsIn(endDate) {
 function startMeetingEndTimer(endTimeStr) {
     if (meetingEndInterval) clearInterval(meetingEndInterval);
     const endTime = new Date(endTimeStr + "Z").getTime();
+    
     meetingEndInterval = setInterval(() => {
         const dist = endTime - Date.now();
+        
+        // --- MEETING END WARNING LOGIC (5 mins) ---
+        if (dist <= 5 * 60000 && dist > 0 && currentLockedEvent && !announcedEndings.includes(currentLockedEvent.id)) {
+            announcedEndings.push(currentLockedEvent.id);
+            playMeetingEndWarning();
+        }
+        
         if (dist <= 0) {
             clearInterval(meetingEndInterval);
             showOccupied(false);
@@ -630,6 +654,10 @@ async function extendMeeting(minutes) {
 
         if (res.ok) {
             currentLockedEvent.end.dateTime = newEnd.toISOString().replace("Z", "");
+            
+            // Allow the 5-minute warning to happen again since they extended!
+            announcedEndings = announcedEndings.filter(id => id !== currentLockedEvent.id);
+            
             startMeetingEndTimer(currentLockedEvent.end.dateTime);
 
             const startFmt = new Date(currentLockedEvent.start.dateTime + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
