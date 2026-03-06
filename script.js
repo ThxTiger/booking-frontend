@@ -31,6 +31,7 @@ let isAuthInProgress = false;
 let manuallyUnlockedEventId = null;
 let lastKnownEventId = "init";
 let currentAppState = "available"; 
+let announcedMeetings = []; // Tracks which meetings have already triggered the audio warning
 
 // ═══════════════════════════════════════════
 //  STATE MACHINE
@@ -57,6 +58,26 @@ function showView(viewId) {
 }
 
 // ═══════════════════════════════════════════
+//  AUDIO WARNING SYSTEM (TTS)
+// ═══════════════════════════════════════════
+function playEvictionWarning() {
+    const message = new SpeechSynthesisUtterance();
+    message.text = "Attention s'il vous plaît. Une réunion programmée va commencer dans 15 minutes. Merci de préparer la libération de la salle.";
+    message.lang = "fr-FR";
+    message.rate = 0.85; 
+    
+    window.speechSynthesis.speak(message);
+
+    setTimeout(() => {
+        const message2 = new SpeechSynthesisUtterance();
+        message2.text = "Rappel. La salle est réservée et la réunion commence dans 15 minutes. Merci.";
+        message2.lang = "fr-FR";
+        message2.rate = 0.85;
+        window.speechSynthesis.speak(message2);
+    }, 10000);
+}
+
+// ═══════════════════════════════════════════
 //  INITIALIZATION & REDIRECT ROUTING
 // ═══════════════════════════════════════════
 document.addEventListener("DOMContentLoaded", async () => {
@@ -73,20 +94,30 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     try {
         await myMSALObj.initialize();
-        
-        // This processes the token when the app reloads from Microsoft
         const redirectResponse = await myMSALObj.handleRedirectPromise();
         
         if (redirectResponse) {
             handleLoginSuccess(redirectResponse.account);
             
-            // ── RESUME BOOKING ──
+            // ── RESUME BOOKING (With saved form data) ──
             const pendingRoom = localStorage.getItem("pendingBookRoom");
             if (pendingRoom !== null) {
                 document.getElementById("roomSelect").value = pendingRoom;
                 handleRoomChange();
                 localStorage.removeItem("pendingBookRoom");
-                setTimeout(openBookingModal, 400); // Give UI time to update
+                
+                setTimeout(() => {
+                    openBookingModal();
+                    // Restore typed data so the user doesn't have to type it again
+                    if (localStorage.getItem("pbSubj")) document.getElementById("subject").value = localStorage.getItem("pbSubj");
+                    if (localStorage.getItem("pbFil")) document.getElementById("filiale").value = localStorage.getItem("pbFil");
+                    if (localStorage.getItem("pbDesc")) document.getElementById("description").value = localStorage.getItem("pbDesc");
+                    if (localStorage.getItem("pbAtt")) document.getElementById("attendees").value = localStorage.getItem("pbAtt");
+                    if (localStorage.getItem("pbStart")) document.getElementById("startTime").value = localStorage.getItem("pbStart");
+                    if (localStorage.getItem("pbEnd")) document.getElementById("endTime").value = localStorage.getItem("pbEnd");
+                    
+                    ["pbSubj", "pbFil", "pbDesc", "pbAtt", "pbStart", "pbEnd"].forEach(k => localStorage.removeItem(k));
+                }, 500); 
             }
             
             // ── RESUME SECURE END ──
@@ -104,12 +135,11 @@ document.addEventListener("DOMContentLoaded", async () => {
                     handleRoomChange();
                     
                     setTimeout(() => {
-                        processSecureEnd(redirectResponse.account.username, allowed, availableRooms[roomIdx].emailAddress, pendingEndId, redirectResponse.account);
+                        processSecureEnd(redirectResponse.account.username, allowed, availableRooms[roomIdx].emailAddress, pendingEndId);
                     }, 800);
                 }
             }
         } else {
-            // Normal page load check
             const accounts = myMSALObj.getAllAccounts();
             if (accounts.length > 0) handleLoginSuccess(accounts[0]);
         }
@@ -159,7 +189,6 @@ function signOut() {
     if (loginBtn) loginBtn.style.display = "inline-block";
     if (sessionTimeout) clearTimeout(sessionTimeout);
     
-    // Local wipe avoids triggering the Microsoft "Select Account to Log Out" screen
     localStorage.clear();
     sessionStorage.clear();
     
@@ -220,7 +249,9 @@ async function triggerSignInThenBook() {
 // ═══════════════════════════════════════════
 function openBookingModal() {
     document.getElementById("displayEmail").value = username;
-    initModalTimes();
+    if (!document.getElementById("startTime").value) {
+        initModalTimes();
+    }
     document.getElementById("bookingOverlay").classList.remove("hidden");
     setTimeout(refreshBookingTimeline, 100);
 }
@@ -352,6 +383,7 @@ async function checkForActiveMeeting() {
         const startFmt = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const endFmt = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+        // FUTURE BLOCK + TTS WARNING
         if (now < start) {
             setAppState("available");
             showOccupied(false);
@@ -360,6 +392,13 @@ async function checkForActiveMeeting() {
             document.getElementById("futureTime").textContent = `${startFmt} – ${endFmt}`;
             startCountdown(start, "futureTimer", "STARTING…");
             updateNextMeetingPreview({ subject: displaySubject, startFmt, endFmt });
+            
+            // Audio Trigger
+            const timeToStartMins = (start.getTime() - now.getTime()) / 60000;
+            if (timeToStartMins <= 15 && timeToStartMins > 0 && !announcedMeetings.includes(event.id)) {
+                announcedMeetings.push(event.id);
+                playEvictionWarning();
+            }
             return;
         }
 
@@ -540,9 +579,6 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
 }
 
 // ═══════════════════════════════════════════
-//  +15 MIN EXTENSION (No Auth Required)
-// ═══════════════════════════════════════════
-// ═══════════════════════════════════════════
 //  +15 MIN EXTENSION (Phantom Bug Fixed)
 // ═══════════════════════════════════════════
 async function extendMeeting(minutes) {
@@ -566,15 +602,11 @@ async function extendMeeting(minutes) {
         });
         const data = await res.json();
         
-        // FIX: Verify the busy block actually overlaps our new gap, 
-        // ignoring boundary-touching events (like the current meeting itself)
+        // Accurate Overlap Check
         const isBusy = (data?.value?.[0]?.scheduleItems || []).some(item => {
             if (item.status !== "busy") return false;
-            
             const itemStart = new Date(item.start.dateTime + "Z");
             const itemEnd = new Date(item.end.dateTime + "Z");
-            
-            // True Overlap Formula: (StartA < EndB) and (EndA > StartB)
             return (itemStart < newEnd && itemEnd > currentEnd);
         });
 
@@ -611,6 +643,7 @@ async function extendMeeting(minutes) {
         showToast("Network error.", true); 
     }
 }
+
 // ═══════════════════════════════════════════
 //  SECURE END MEETING (Redirect Flow)
 // ═══════════════════════════════════════════
@@ -637,7 +670,7 @@ async function secureEndMeeting() {
     }
 }
 
-async function processSecureEnd(userEmail, allowedList, roomEmail, eventId, accountObj) {
+async function processSecureEnd(userEmail, allowedList, roomEmail, eventId) {
     if (!allowedList.includes(userEmail.toLowerCase())) {
         showToast(`⛔ Access denied — you are not authorized to end this meeting.`, true);
         localStorage.clear();
@@ -677,7 +710,7 @@ async function processSecureEnd(userEmail, allowedList, roomEmail, eventId, acco
 }
 
 // ═══════════════════════════════════════════
-//  BOOKING
+//  BOOKING (Auto-Redirect on Expired Token)
 // ═══════════════════════════════════════════
 async function createBooking() {
     if (!username) { openAuthGate(); return; }
@@ -697,22 +730,24 @@ async function createBooking() {
         showToast("Please fill in all required fields.", true); return;
     }
 
-   let accessToken = "";
+    let accessToken = "";
     try {
         const account = myMSALObj.getAllAccounts()[0];
         if (!account) throw new Error("No active account");
         const r = await myMSALObj.acquireTokenSilent({ ...loginRequest, account });
         accessToken = r.accessToken;
     } catch { 
-        // Session expired or missing: Automatically prompt the user to sign in right now
-        try {
-            const response = await myMSALObj.loginPopup(loginRequest);
-            handleLoginSuccess(response.account);
-            accessToken = response.accessToken;
-        } catch (err) {
-            if (err.errorCode !== "user_cancelled") showToast("Authentication failed.", true);
-            return;
-        }
+        // Token expired mid-typing: Save the form data so they don't lose it!
+        localStorage.setItem("pendingBookRoom", idx);
+        localStorage.setItem("pbSubj", subject);
+        localStorage.setItem("pbFil", filiale);
+        localStorage.setItem("pbDesc", desc);
+        localStorage.setItem("pbAtt", attendeesRaw);
+        localStorage.setItem("pbStart", startVal);
+        localStorage.setItem("pbEnd", endVal);
+        
+        myMSALObj.loginRedirect(loginRequest);
+        return; 
     }
 
     try {
