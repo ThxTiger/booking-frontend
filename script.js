@@ -58,11 +58,13 @@ function showView(viewId) {
 }
 
 // ═══════════════════════════════════════════
-//  AUDIO WARNING SYSTEM (TTS)
+//  AUDIO WARNING SYSTEM (TTS) - DYNAMIC TIME
 // ═══════════════════════════════════════════
-function playEvictionWarning() {
+function playEvictionWarning(minutes) {
+    const minText = minutes > 1 ? "minutes" : "minute";
+    
     const message = new SpeechSynthesisUtterance();
-    message.text = "Attention s'il vous plaît. Une réunion programmée va commencer dans 15 minutes. Merci de préparer la libération de la salle.";
+    message.text = `Attention s'il vous plaît. Une réunion programmée va commencer dans ${minutes} ${minText}. Merci de préparer la libération de la salle.`;
     message.lang = "fr-FR";
     message.rate = 0.85; 
     
@@ -70,7 +72,7 @@ function playEvictionWarning() {
 
     setTimeout(() => {
         const message2 = new SpeechSynthesisUtterance();
-        message2.text = "Rappel. La salle est réservée et la réunion commence dans 15 minutes. Merci.";
+        message2.text = `Rappel. La salle est réservée et la réunion commence dans ${minutes} ${minText}. Merci.`;
         message2.lang = "fr-FR";
         message2.rate = 0.85;
         window.speechSynthesis.speak(message2);
@@ -393,11 +395,13 @@ async function checkForActiveMeeting() {
             startCountdown(start, "futureTimer", "STARTING…");
             updateNextMeetingPreview({ subject: displaySubject, startFmt, endFmt });
             
-            // Audio Trigger
-            const timeToStartMins = (start.getTime() - now.getTime()) / 60000;
+            // Audio Trigger: Calculate exact minutes remaining
+            const timeToStartMins = Math.round((start.getTime() - now.getTime()) / 60000);
+            
             if (timeToStartMins <= 15 && timeToStartMins > 0 && !announcedMeetings.includes(event.id)) {
                 announcedMeetings.push(event.id);
-                playEvictionWarning();
+                // Pass the exact rounded minutes to the TTS function
+                playEvictionWarning(timeToStartMins);
             }
             return;
         }
@@ -602,7 +606,6 @@ async function extendMeeting(minutes) {
         });
         const data = await res.json();
         
-        // Accurate Overlap Check
         const isBusy = (data?.value?.[0]?.scheduleItems || []).some(item => {
             if (item.status !== "busy") return false;
             const itemStart = new Date(item.start.dateTime + "Z");
@@ -737,7 +740,6 @@ async function createBooking() {
         const r = await myMSALObj.acquireTokenSilent({ ...loginRequest, account });
         accessToken = r.accessToken;
     } catch { 
-        // Token expired mid-typing: Save the form data so they don't lose it!
         localStorage.setItem("pendingBookRoom", idx);
         localStorage.setItem("pbSubj", subject);
         localStorage.setItem("pbFil", filiale);
