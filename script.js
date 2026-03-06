@@ -31,8 +31,8 @@ let isAuthInProgress = false;
 let manuallyUnlockedEventId = null;
 let lastKnownEventId = "init";
 let currentAppState = "available"; 
-let announcedMeetings = []; // Historique des alertes d'éviction (avant réunion)
-let announcedEndings = [];  // Historique des alertes de fin (pendant réunion)
+let announcedMeetings = []; 
+let announcedEndings = [];  
 
 // ═══════════════════════════════════════════
 //  STATE MACHINE
@@ -119,7 +119,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         input.setAttribute("spellcheck", "false");
         input.removeAttribute("list"); 
     });
-    // -------------------------------------------
 
     initModalTimes();
     startClock();
@@ -135,22 +134,15 @@ document.addEventListener("DOMContentLoaded", async () => {
         await myMSALObj.initialize();
         const redirectResponse = await myMSALObj.handleRedirectPromise();
         
-        // 1. Appliquer le statut de connexion
         if (redirectResponse) {
+            // L'UTILISATEUR REVIENT TOUT JUSTE DE MICROSOFT
             handleLoginSuccess(redirectResponse.account);
-        } else {
-            const accounts = myMSALObj.getAllAccounts();
-            if (accounts.length > 0) handleLoginSuccess(accounts[0]);
-        }
 
-        // 2. RÉCUPÉRATION BLINDÉE (Si l'utilisateur est connecté, on restaure tout !)
-        if (username) {
             // ── RESUME BOOKING ──
             const pendingRoom = localStorage.getItem("pendingBookRoom");
             if (pendingRoom !== null) {
                 document.getElementById("roomSelect").value = pendingRoom;
                 handleRoomChange();
-                localStorage.removeItem("pendingBookRoom");
                 
                 setTimeout(() => {
                     openBookingModal();
@@ -161,7 +153,8 @@ document.addEventListener("DOMContentLoaded", async () => {
                     if (localStorage.getItem("pbStart")) document.getElementById("startTime").value = localStorage.getItem("pbStart");
                     if (localStorage.getItem("pbEnd")) document.getElementById("endTime").value = localStorage.getItem("pbEnd");
                     
-                    ["pbSubj", "pbFil", "pbDesc", "pbAtt", "pbStart", "pbEnd"].forEach(k => localStorage.removeItem(k));
+                    // On nettoie la mémoire après avoir restauré
+                    ["pendingBookRoom", "pbSubj", "pbFil", "pbDesc", "pbAtt", "pbStart", "pbEnd"].forEach(k => localStorage.removeItem(k));
                 }, 500); 
             }
             
@@ -180,10 +173,17 @@ document.addEventListener("DOMContentLoaded", async () => {
                     handleRoomChange();
                     
                     setTimeout(() => {
-                        processSecureEnd(username, allowed, availableRooms[roomIdx].emailAddress, pendingEndId);
+                        processSecureEnd(redirectResponse.account.username, allowed, availableRooms[roomIdx].emailAddress, pendingEndId);
                     }, 800);
                 }
             }
+        } else {
+            // CHARGEMENT NORMAL (Pas de redirection Microsoft récente)
+            const accounts = myMSALObj.getAllAccounts();
+            if (accounts.length > 0) handleLoginSuccess(accounts[0]);
+            
+            // 🧹 NETTOYAGE STRICT : On supprime toutes les données fantômes
+            ["pendingBookRoom", "pbSubj", "pbFil", "pbDesc", "pbAtt", "pbStart", "pbEnd", "pendingEndEventId", "pendingEndRoomIdx", "pendingEndAllowed"].forEach(k => localStorage.removeItem(k));
         }
     } catch (e) { 
         console.error("Auth init error: ", e); 
@@ -215,12 +215,6 @@ function startClock() {
 async function signIn() {
     if (isAuthInProgress) return;
     isAuthInProgress = true;
-    
-    // Si l'utilisateur clique sur Sign In pendant que le formulaire est ouvert, on sauve !
-    if (!document.getElementById("bookingOverlay").classList.contains("hidden")) {
-        saveFormDataToStorage();
-    }
-
     try { 
         await myMSALObj.loginRedirect(loginRequest); 
     } catch (e) { 
@@ -287,6 +281,7 @@ function closeAuthGate() {
 
 async function triggerSignInThenBook() {
     closeAuthGate();
+    // On sauve UNIQUEMENT quand on passe par cette porte (quand on a été déconnecté pendant la saisie)
     saveFormDataToStorage();
     await signIn();
 }
@@ -430,6 +425,7 @@ async function checkForActiveMeeting() {
         const startFmt = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const endFmt = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+        // FUTURE BLOCK + TTS WARNING
         if (now < start) {
             setAppState("available");
             showOccupied(false);
@@ -763,7 +759,7 @@ async function processSecureEnd(userEmail, allowedList, roomEmail, eventId) {
 }
 
 // ═══════════════════════════════════════════
-//  BOOKING 
+//  BOOKING
 // ═══════════════════════════════════════════
 async function createBooking() {
     if (!username) { openAuthGate(); return; }
