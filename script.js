@@ -61,33 +61,50 @@ function showView(viewId) {
 // ═══════════════════════════════════════════
 //  AUDIO WARNING SYSTEMS (MP3)
 // ═══════════════════════════════════════════
-// 1. Alerte pour faire sortir les gens avant une réunion entrante
 function playEvictionWarning(minutes) {
     let audioFileName = '';
-
-    // If 14 or 15 mins remaining, play the "15 minutes" audio
     if (minutes >= 14) {
         audioFileName = './alerte-15min.mp3';
-    } 
-    // If suddenly booked and less than 14 mins remaining, play "imminent" audio
-    else {
+    } else {
         audioFileName = './alerte-imminente.mp3';
     }
 
     const audio = new Audio(audioFileName);
     audio.play().catch(e => console.error("Audio blocked by Kiosk:", e));
 
-    // Rappel après 10 secondes
     setTimeout(() => {
         const audioRappel = new Audio(audioFileName);
         audioRappel.play().catch(e => console.error("Audio blocked by Kiosk:", e));
     }, 10000);
 }
 
-// 2. Alerte 5 min avant la fin de la réunion actuelle
 function playMeetingEndWarning() {
     const audio = new Audio('./alerte-5min.mp3');
     audio.play().catch(e => console.error("Audio blocked by Kiosk:", e));
+}
+
+// ═══════════════════════════════════════════
+//  DATA SAVER (Anti-AFK System)
+// ═══════════════════════════════════════════
+function saveFormDataToStorage() {
+    const idx = document.getElementById("roomSelect").value;
+    if (idx !== "") {
+        localStorage.setItem("pendingBookRoom", idx);
+        
+        const subj = document.getElementById("subject").value.trim();
+        const fil = document.getElementById("filiale").value.trim();
+        const desc = document.getElementById("description").value.trim();
+        const att = document.getElementById("attendees").value.trim();
+        const st = document.getElementById("startTime").value;
+        const et = document.getElementById("endTime").value;
+        
+        if (subj) localStorage.setItem("pbSubj", subj);
+        if (fil) localStorage.setItem("pbFil", fil);
+        if (desc) localStorage.setItem("pbDesc", desc);
+        if (att) localStorage.setItem("pbAtt", att);
+        if (st) localStorage.setItem("pbStart", st);
+        if (et) localStorage.setItem("pbEnd", et);
+    }
 }
 
 // ═══════════════════════════════════════════
@@ -100,7 +117,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         input.setAttribute("autocomplete", "new-password");
         input.setAttribute("data-lpignore", "true"); 
         input.setAttribute("spellcheck", "false");
-        // CECI TUE LA FLÈCHE ET LES SUGGESTIONS DE LA BALISE <datalist>
         input.removeAttribute("list"); 
     });
     // -------------------------------------------
@@ -109,7 +125,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     startClock();
     await fetchRooms();
 
-    // Heartbeats
     setInterval(checkForActiveMeeting, 5000);
     setInterval(() => {
         const idx = document.getElementById("roomSelect").value;
@@ -120,9 +135,16 @@ document.addEventListener("DOMContentLoaded", async () => {
         await myMSALObj.initialize();
         const redirectResponse = await myMSALObj.handleRedirectPromise();
         
+        // 1. Appliquer le statut de connexion
         if (redirectResponse) {
             handleLoginSuccess(redirectResponse.account);
-            
+        } else {
+            const accounts = myMSALObj.getAllAccounts();
+            if (accounts.length > 0) handleLoginSuccess(accounts[0]);
+        }
+
+        // 2. RÉCUPÉRATION BLINDÉE (Si l'utilisateur est connecté, on restaure tout !)
+        if (username) {
             // ── RESUME BOOKING ──
             const pendingRoom = localStorage.getItem("pendingBookRoom");
             if (pendingRoom !== null) {
@@ -158,13 +180,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                     handleRoomChange();
                     
                     setTimeout(() => {
-                        processSecureEnd(redirectResponse.account.username, allowed, availableRooms[roomIdx].emailAddress, pendingEndId);
+                        processSecureEnd(username, allowed, availableRooms[roomIdx].emailAddress, pendingEndId);
                     }, 800);
                 }
             }
-        } else {
-            const accounts = myMSALObj.getAllAccounts();
-            if (accounts.length > 0) handleLoginSuccess(accounts[0]);
         }
     } catch (e) { 
         console.error("Auth init error: ", e); 
@@ -196,6 +215,12 @@ function startClock() {
 async function signIn() {
     if (isAuthInProgress) return;
     isAuthInProgress = true;
+    
+    // Si l'utilisateur clique sur Sign In pendant que le formulaire est ouvert, on sauve !
+    if (!document.getElementById("bookingOverlay").classList.contains("hidden")) {
+        saveFormDataToStorage();
+    }
+
     try { 
         await myMSALObj.loginRedirect(loginRequest); 
     } catch (e) { 
@@ -262,28 +287,7 @@ function closeAuthGate() {
 
 async function triggerSignInThenBook() {
     closeAuthGate();
-    const idx = document.getElementById("roomSelect").value;
-    
-    if (idx !== "") {
-        localStorage.setItem("pendingBookRoom", idx);
-        
-        // --- NOUVEAU : SAUVEGARDE ANTI-AFK ---
-        // On aspire tout ce qui a été tapé dans le formulaire juste avant de rediriger
-        const subj = document.getElementById("subject") ? document.getElementById("subject").value.trim() : "";
-        const fil = document.getElementById("filiale") ? document.getElementById("filiale").value.trim() : "";
-        const desc = document.getElementById("description") ? document.getElementById("description").value.trim() : "";
-        const att = document.getElementById("attendees") ? document.getElementById("attendees").value.trim() : "";
-        const st = document.getElementById("startTime") ? document.getElementById("startTime").value : "";
-        const et = document.getElementById("endTime") ? document.getElementById("endTime").value : "";
-        
-        if (subj) localStorage.setItem("pbSubj", subj);
-        if (fil) localStorage.setItem("pbFil", fil);
-        if (desc) localStorage.setItem("pbDesc", desc);
-        if (att) localStorage.setItem("pbAtt", att);
-        if (st) localStorage.setItem("pbStart", st);
-        if (et) localStorage.setItem("pbEnd", et);
-    }
-    
+    saveFormDataToStorage();
     await signIn();
 }
 
@@ -426,7 +430,6 @@ async function checkForActiveMeeting() {
         const startFmt = start.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
         const endFmt = end.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
-        // FUTURE BLOCK + TTS WARNING
         if (now < start) {
             setAppState("available");
             showOccupied(false);
@@ -436,7 +439,6 @@ async function checkForActiveMeeting() {
             startCountdown(start, "futureTimer", "STARTING…");
             updateNextMeetingPreview({ subject: displaySubject, startFmt, endFmt });
             
-            // --- EVICTION WARNING LOGIC ---
             const timeToStartMins = Math.round((start.getTime() - now.getTime()) / 60000);
             if (timeToStartMins <= 15 && timeToStartMins > 0 && !announcedMeetings.includes(event.id)) {
                 announcedMeetings.push(event.id);
@@ -569,7 +571,6 @@ function startMeetingEndTimer(endTimeStr) {
     meetingEndInterval = setInterval(() => {
         const dist = endTime - Date.now();
         
-        // --- MEETING END WARNING LOGIC (5 mins) ---
         if (dist <= 5 * 60000 && dist > 0 && currentLockedEvent && !announcedEndings.includes(currentLockedEvent.id)) {
             announcedEndings.push(currentLockedEvent.id);
             playMeetingEndWarning();
@@ -678,9 +679,7 @@ async function extendMeeting(minutes) {
         if (res.ok) {
             currentLockedEvent.end.dateTime = newEnd.toISOString().replace("Z", "");
             
-            // Allow the 5-minute warning to happen again since they extended!
             announcedEndings = announcedEndings.filter(id => id !== currentLockedEvent.id);
-            
             startMeetingEndTimer(currentLockedEvent.end.dateTime);
 
             const startFmt = new Date(currentLockedEvent.start.dateTime + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -699,7 +698,7 @@ async function extendMeeting(minutes) {
 }
 
 // ═══════════════════════════════════════════
-//  SECURE END MEETING (Redirect Flow)
+//  SECURE END MEETING
 // ═══════════════════════════════════════════
 async function secureEndMeeting() {
     if (isAuthInProgress || !currentLockedEvent) return;
@@ -764,7 +763,7 @@ async function processSecureEnd(userEmail, allowedList, roomEmail, eventId) {
 }
 
 // ═══════════════════════════════════════════
-//  BOOKING (Auto-Redirect on Expired Token)
+//  BOOKING 
 // ═══════════════════════════════════════════
 async function createBooking() {
     if (!username) { openAuthGate(); return; }
@@ -791,14 +790,7 @@ async function createBooking() {
         const r = await myMSALObj.acquireTokenSilent({ ...loginRequest, account });
         accessToken = r.accessToken;
     } catch { 
-        localStorage.setItem("pendingBookRoom", idx);
-        localStorage.setItem("pbSubj", subject);
-        localStorage.setItem("pbFil", filiale);
-        localStorage.setItem("pbDesc", desc);
-        localStorage.setItem("pbAtt", attendeesRaw);
-        localStorage.setItem("pbStart", startVal);
-        localStorage.setItem("pbEnd", endVal);
-        
+        saveFormDataToStorage();
         myMSALObj.loginRedirect(loginRequest);
         return; 
     }
