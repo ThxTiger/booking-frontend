@@ -35,6 +35,21 @@ let announcedMeetings = [];
 let announcedEndings = [];
 
 // ═══════════════════════════════════════════
+//  FIX-03 (VULN-03): HTML ESCAPE HELPER
+//  Applied to every piece of API-sourced text
+//  before it is injected into innerHTML.
+//  Prevents XSS via crafted meeting subjects.
+// ═══════════════════════════════════════════
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+// ═══════════════════════════════════════════
 //  STATE MACHINE
 // ═══════════════════════════════════════════
 function setAppState(state) {
@@ -74,10 +89,6 @@ function playMeetingEndWarning() {
 
 // ═══════════════════════════════════════════
 //  DATA SAVER
-//  Called right before loginRedirect so the user's
-//  half-filled booking form survives the page reload.
-//  Stores: room index + all form fields into localStorage.
-//  Wiped immediately on return (fix #3).
 // ═══════════════════════════════════════════
 function saveFormDataToStorage() {
     const idx = document.getElementById("roomSelect").value;
@@ -117,14 +128,8 @@ document.addEventListener("DOMContentLoaded", async () => {
         const redirectResponse = await myMSALObj.handleRedirectPromise();
 
         if (redirectResponse) {
-            // ── USER JUST RETURNED FROM MICROSOFT LOGIN ──
             handleLoginSuccess(redirectResponse.account);
 
-            // ── FIX #3 — RESUME BOOKING ──
-            // Step 1: copy localStorage → JS memory (synchronous, same tick)
-            // Step 2: wipe localStorage immediately — 0ms exposure window
-            // Step 3: 500ms later use JS vars to fill form (waits for room
-            //         availability fetch from handleRoomChange to settle)
             const pendingRoom = localStorage.getItem("pendingBookRoom");
             if (pendingRoom !== null) {
                 const restored = {
@@ -135,7 +140,6 @@ document.addEventListener("DOMContentLoaded", async () => {
                     start: localStorage.getItem("pbStart"),
                     end:   localStorage.getItem("pbEnd"),
                 };
-                // Wipe immediately — before any async work or timeout
                 ["pendingBookRoom","pbSubj","pbFil","pbDesc","pbAtt","pbStart","pbEnd"]
                     .forEach(k => localStorage.removeItem(k));
 
@@ -153,12 +157,10 @@ document.addEventListener("DOMContentLoaded", async () => {
                 }, 500);
             }
 
-            // ── RESUME SECURE END ──
             const pendingEndId = localStorage.getItem("pendingEndEventId");
             if (pendingEndId) {
                 const roomIdx = localStorage.getItem("pendingEndRoomIdx");
                 const allowed = JSON.parse(localStorage.getItem("pendingEndAllowed") || "[]");
-                // Wipe before async work
                 ["pendingEndEventId","pendingEndRoomIdx","pendingEndAllowed"]
                     .forEach(k => localStorage.removeItem(k));
                 if (availableRooms[roomIdx]) {
@@ -176,10 +178,8 @@ document.addEventListener("DOMContentLoaded", async () => {
             }
 
         } else {
-            // Normal load — no redirect just happened
             const accounts = myMSALObj.getAllAccounts();
             if (accounts.length > 0) handleLoginSuccess(accounts[0]);
-            // Strict cleanup — no stale data should survive a normal load
             ["pendingBookRoom","pbSubj","pbFil","pbDesc","pbAtt","pbStart","pbEnd",
              "pendingEndEventId","pendingEndRoomIdx","pendingEndAllowed"]
                 .forEach(k => localStorage.removeItem(k));
@@ -222,11 +222,6 @@ async function signIn() {
     }
 }
 
-// ── FIX #4 — SILENT LOGOUT ──
-// logoutRedirect with onRedirectNavigate: () => false
-// sends the logout signal to Microsoft (kills their session cookie)
-// but cancels the actual page navigation so the kiosk stays put.
-// No popup, no redirect, no blank screen.
 async function signOut() {
     username = "";
     const badge    = document.getElementById("userBadge");
@@ -287,7 +282,7 @@ function closeAuthGate() { document.getElementById("authGateOverlay").classList.
 
 async function triggerSignInThenBook() {
     closeAuthGate();
-    saveFormDataToStorage(); // backup form before redirect
+    saveFormDataToStorage();
     await signIn();
 }
 
@@ -326,6 +321,7 @@ async function openAgenda() {
         const data  = await res.json();
         const busy  = (data?.value?.[0]?.scheduleItems || []).filter(i => i.status === "busy");
         if (busy.length === 0) { content.innerHTML = `<div class="occ-agenda-empty">No meetings scheduled today.</div>`; return; }
+        // ── FIX-03: escapeHtml on item.subject (XSS fix — VULN-03, lines 329-342) ──
         content.innerHTML = busy.map(item => {
             const iS    = new Date(item.start.dateTime + "Z");
             const iE    = new Date(item.end.dateTime   + "Z");
@@ -337,7 +333,7 @@ async function openAgenda() {
                          : isPast ? `<span class="agenda-badge past">DONE</span>` : "";
             return `<div class="agenda-modal-item${isPast?" past":isNow?" active-now":""}">
                 <div class="agenda-modal-time">${s} – ${e}</div>
-                <div style="flex:1"><div class="agenda-modal-subject">${item.subject||"Meeting"} ${badge}</div></div>
+                <div style="flex:1"><div class="agenda-modal-subject">${escapeHtml(item.subject||"Meeting")} ${badge}</div></div>
             </div>`;
         }).join("");
     } catch { content.innerHTML = `<div class="occ-agenda-empty">Failed to load.</div>`; }
@@ -543,12 +539,13 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
         const data     = await res.json();
         const upcoming = (data?.value?.[0]?.scheduleItems || []).filter(i => i.status === "busy");
         if (upcoming.length === 0) { list.innerHTML = `<div class="occ-agenda-empty">No more meetings today.</div>`; return; }
+        // ── FIX-03: escapeHtml on item.subject (XSS fix — VULN-03, lines 546-553) ──
         list.innerHTML = upcoming.map(item => {
             const s = new Date(item.start.dateTime + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
             const e = new Date(item.end.dateTime   + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
             return `<div class="occ-agenda-item">
                 <div class="occ-agenda-item-time">${s} – ${e}</div>
-                <div class="occ-agenda-item-subj">${item.subject || "Meeting"}</div>
+                <div class="occ-agenda-item-subj">${escapeHtml(item.subject || "Meeting")}</div>
             </div>`;
         }).join("");
     } catch {}
@@ -602,9 +599,6 @@ async function extendMeeting(minutes) {
 
 // ═══════════════════════════════════════════
 //  SECURE END MEETING
-//  Frontend sends the Bearer token.
-//  Backend (fix #2) verifies it against Graph /me
-//  before allowing the end — so fake tokens are rejected.
 // ═══════════════════════════════════════════
 async function secureEndMeeting() {
     if (isAuthInProgress || !currentLockedEvent) return;
@@ -717,6 +711,7 @@ async function createBooking() {
     } catch (e) { showToast("Network error: " + e.message, true); }
 }
 
+// ── FIX-03: escapeHtml on subject, filiale, invitees (XSS fix — VULN-03, lines 727-743) ──
 function showBookingSuccess(subject, filiale, timeRange, invitees) {
     const overlay = document.createElement("div");
     overlay.style.cssText = `
@@ -730,10 +725,10 @@ function showBookingSuccess(subject, filiale, timeRange, invitees) {
         <div style="font-size:0.9rem;color:rgba(255,255,255,.4);margin-bottom:32px;">Added to your Outlook calendar.</div>
         <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:16px;
              padding:24px 36px;text-align:left;min-width:280px;line-height:2.2;font-size:.9rem;color:rgba(255,255,255,.75);">
-            <div><strong style="color:#22c46e;">Subject</strong>&nbsp;&nbsp;${subject}</div>
-            <div><strong style="color:#22c46e;">Unit</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${filiale}</div>
+            <div><strong style="color:#22c46e;">Subject</strong>&nbsp;&nbsp;${escapeHtml(subject)}</div>
+            <div><strong style="color:#22c46e;">Unit</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${escapeHtml(filiale)}</div>
             <div><strong style="color:#22c46e;">Time</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${timeRange}</div>
-            <div><strong style="color:#22c46e;">Invitees</strong>&nbsp;${invitees || "None"}</div>
+            <div><strong style="color:#22c46e;">Invitees</strong>&nbsp;${escapeHtml(invitees || "None")}</div>
         </div>
         <button id="successClose" style="margin-top:28px;padding:12px 40px;border-radius:999px;
             background:#22c46e;color:#05200e;border:none;font-family:'Sora',sans-serif;
