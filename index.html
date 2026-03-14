@@ -4,7 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Axians Room Booking</title>
-    <script type="text/javascript" src="https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.min.js"></script>
+    <!--
+        FIX (SAST-04 / VULN-10): Subresource Integrity added to MSAL script.
+        The integrity hash below is for msal-browser 2.30.0 min.
+        To regenerate it if you upgrade MSAL:
+            curl -s https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.min.js \
+              | openssl dgst -sha384 -binary | openssl base64 -A
+        Then prefix the result with "sha384-" and set it as the integrity value.
+    -->
+    <script
+        type="text/javascript"
+        src="https://alcdn.msauth.net/browser/2.30.0/js/msal-browser.min.js"
+        integrity="sha384-OLBgp1GsljhM2TJ+sbHjaiH9txEUvgdDTAzHv2P24donTt6/529l+9Ua0vFImLlb"
+        crossorigin="anonymous"
+    ></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
