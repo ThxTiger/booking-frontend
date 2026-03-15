@@ -323,20 +323,42 @@ async function openAgenda() {
         const busy  = (data?.value?.[0]?.scheduleItems || []).filter(i => i.status === "busy");
         if (busy.length === 0) { content.innerHTML = `<div class="occ-agenda-empty">No meetings scheduled today.</div>`; return; }
         // ── FIX-03: escapeHtml on item.subject (XSS fix — VULN-03, lines 329-342) ──
-        content.innerHTML = busy.map(item => {
+        // FIX-03 (DOM rewrite): use createElement/textContent — no innerHTML with user data (VULN-03)
+        content.textContent = "";
+        busy.forEach(item => {
             const iS    = new Date(item.start.dateTime + "Z");
             const iE    = new Date(item.end.dateTime   + "Z");
             const s     = iS.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
             const e     = iE.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
             const isNow  = now >= iS && now < iE;
             const isPast = now >= iE;
-            const badge  = isNow  ? `<span class="agenda-badge now">NOW</span>`
-                         : isPast ? `<span class="agenda-badge past">DONE</span>` : "";
-            return `<div class="agenda-modal-item${isPast?" past":isNow?" active-now":""}">
-                <div class="agenda-modal-time">${s} – ${e}</div>
-                <div style="flex:1"><div class="agenda-modal-subject">${escapeHtml(item.subject||"Meeting")} ${badge}</div></div>
-            </div>`;
-        }).join("");
+
+            const row = document.createElement("div");
+            row.className = "agenda-modal-item" + (isPast ? " past" : isNow ? " active-now" : "");
+
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "agenda-modal-time";
+            timeDiv.textContent = s + " \u2013 " + e;
+
+            const wrap = document.createElement("div");
+            wrap.style.flex = "1";
+
+            const subjDiv = document.createElement("div");
+            subjDiv.className = "agenda-modal-subject";
+            subjDiv.textContent = item.subject || "Meeting";
+
+            if (isNow || isPast) {
+                const badge = document.createElement("span");
+                badge.className = "agenda-badge " + (isNow ? "now" : "past");
+                badge.textContent = isNow ? "NOW" : "DONE";
+                subjDiv.appendChild(badge);
+            }
+
+            wrap.appendChild(subjDiv);
+            row.appendChild(timeDiv);
+            row.appendChild(wrap);
+            content.appendChild(row);
+        });
     } catch { content.innerHTML = `<div class="occ-agenda-empty">Failed to load.</div>`; }
 }
 
@@ -565,15 +587,27 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
             return true;
         });
         if (upcoming.length === 0) { list.innerHTML = `<div class="occ-agenda-empty">No more meetings today.</div>`; return; }
-        // ── FIX-03: escapeHtml on item.subject (XSS fix — VULN-03, lines 546-553) ──
-        list.innerHTML = upcoming.map(item => {
+        // FIX-03 (DOM rewrite): use createElement/textContent — no innerHTML with user data (VULN-03)
+        list.textContent = "";
+        upcoming.forEach(item => {
             const s = new Date(item.start.dateTime + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
             const e = new Date(item.end.dateTime   + "Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-            return `<div class="occ-agenda-item">
-                <div class="occ-agenda-item-time">${s} – ${e}</div>
-                <div class="occ-agenda-item-subj">${escapeHtml(item.subject || "Meeting")}</div>
-            </div>`;
-        }).join("");
+
+            const row = document.createElement("div");
+            row.className = "occ-agenda-item";
+
+            const timeDiv = document.createElement("div");
+            timeDiv.className = "occ-agenda-item-time";
+            timeDiv.textContent = s + " \u2013 " + e;
+
+            const subjDiv = document.createElement("div");
+            subjDiv.className = "occ-agenda-item-subj";
+            subjDiv.textContent = item.subject || "Meeting";
+
+            row.appendChild(timeDiv);
+            row.appendChild(subjDiv);
+            list.appendChild(row);
+        });
     } catch {}
 }
 
@@ -739,7 +773,7 @@ async function createBooking() {
     } catch (e) { showToast("Network error: " + e.message, true); }
 }
 
-// ── FIX-03: escapeHtml on subject, filiale, invitees (XSS fix — VULN-03, lines 727-743) ──
+// FIX-03 (DOM rewrite): build overlay entirely with createElement/textContent — no innerHTML with user data (VULN-03)
 function showBookingSuccess(subject, filiale, timeRange, invitees) {
     const overlay = document.createElement("div");
     overlay.style.cssText = `
@@ -747,23 +781,57 @@ function showBookingSuccess(subject, filiale, timeRange, invitees) {
         display:flex;flex-direction:column;justify-content:center;align-items:center;
         font-family:'Sora',sans-serif;text-align:center;padding:40px;animation:fadeIn .3s ease;
     `;
-    overlay.innerHTML = `
-        <div style="font-size:3.5rem;margin-bottom:20px;">✅</div>
-        <div style="font-size:1.8rem;font-weight:800;color:#fff;margin-bottom:6px;">Booking Confirmed</div>
-        <div style="font-size:0.9rem;color:rgba(255,255,255,.4);margin-bottom:32px;">Added to your Outlook calendar.</div>
-        <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:16px;
-             padding:24px 36px;text-align:left;min-width:280px;line-height:2.2;font-size:.9rem;color:rgba(255,255,255,.75);">
-            <div><strong style="color:#22c46e;">Subject</strong>&nbsp;&nbsp;${escapeHtml(subject)}</div>
-            <div><strong style="color:#22c46e;">Unit</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${escapeHtml(filiale)}</div>
-            <div><strong style="color:#22c46e;">Time</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${timeRange}</div>
-            <div><strong style="color:#22c46e;">Invitees</strong>&nbsp;${escapeHtml(invitees || "None")}</div>
-        </div>
-        <button id="successClose" style="margin-top:28px;padding:12px 40px;border-radius:999px;
-            background:#22c46e;color:#05200e;border:none;font-family:'Sora',sans-serif;
-            font-weight:700;font-size:0.95rem;cursor:pointer;">
-            OK · Closing in <span id="successCountdown">5</span>s
-        </button>
-    `;
+
+    const icon = document.createElement("div");
+    icon.style.cssText = "font-size:3.5rem;margin-bottom:20px;";
+    icon.textContent = "\u2705";
+
+    const title = document.createElement("div");
+    title.style.cssText = "font-size:1.8rem;font-weight:800;color:#fff;margin-bottom:6px;";
+    title.textContent = "Booking Confirmed";
+
+    const subtitle = document.createElement("div");
+    subtitle.style.cssText = "font-size:0.9rem;color:rgba(255,255,255,.4);margin-bottom:32px;";
+    subtitle.textContent = "Added to your Outlook calendar.";
+
+    const card = document.createElement("div");
+    card.style.cssText = `background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);
+        border-radius:16px;padding:24px 36px;text-align:left;min-width:280px;
+        line-height:2.2;font-size:.9rem;color:rgba(255,255,255,.75);`;
+
+    function makeRow(labelText, valueText) {
+        const row = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.style.color = "#22c46e";
+        strong.textContent = labelText;
+        const val = document.createTextNode("\u00a0\u00a0" + valueText);
+        row.appendChild(strong);
+        row.appendChild(val);
+        return row;
+    }
+
+    card.appendChild(makeRow("Subject",  subject  || ""));
+    card.appendChild(makeRow("Unit",     filiale  || ""));
+    card.appendChild(makeRow("Time",     timeRange || ""));
+    card.appendChild(makeRow("Invitees", invitees || "None"));
+
+    const btn = document.createElement("button");
+    btn.id = "successClose";
+    btn.style.cssText = `margin-top:28px;padding:12px 40px;border-radius:999px;
+        background:#22c46e;color:#05200e;border:none;font-family:'Sora',sans-serif;
+        font-weight:700;font-size:0.95rem;cursor:pointer;`;
+    btn.textContent = "OK \u00b7 Closing in ";
+    const countdown = document.createElement("span");
+    countdown.id = "successCountdown";
+    countdown.textContent = "5";
+    btn.appendChild(countdown);
+    btn.appendChild(document.createTextNode("s"));
+
+    overlay.appendChild(icon);
+    overlay.appendChild(title);
+    overlay.appendChild(subtitle);
+    overlay.appendChild(card);
+    overlay.appendChild(btn);
     document.body.appendChild(overlay);
     let n = 5;
     const iv = setInterval(() => {
