@@ -25,6 +25,7 @@ let availableRooms = [];
 let currentLockedEvent = null;
 let checkInInterval = null;
 let meetingEndInterval = null;
+let agendaRefreshInterval = null;
 let clockInterval = null;
 let sessionTimeout = null;
 let isAuthInProgress = false;
@@ -454,8 +455,9 @@ function startCountdown(targetDate, elementId, expireText) {
 }
 
 function stopCountdowns() {
-    if (checkInInterval)    { clearInterval(checkInInterval);    checkInInterval    = null; }
-    if (meetingEndInterval) { clearInterval(meetingEndInterval); meetingEndInterval = null; }
+    if (checkInInterval)      { clearInterval(checkInInterval);      checkInInterval      = null; }
+    if (meetingEndInterval)   { clearInterval(meetingEndInterval);   meetingEndInterval   = null; }
+    if (agendaRefreshInterval){ clearInterval(agendaRefreshInterval); agendaRefreshInterval = null; }
 }
 
 // ═══════════════════════════════════════════
@@ -494,6 +496,16 @@ function showMeetingMode(event, subject, organizer, startFmt, endFmt) {
         event.end.dateTime
     );
     if (sessionTimeout) clearTimeout(sessionTimeout);
+
+    // Refresh "Coming Up" every 60 s so newly booked meetings appear automatically
+    if (agendaRefreshInterval) clearInterval(agendaRefreshInterval);
+    agendaRefreshInterval = setInterval(() => {
+        const idx = document.getElementById("roomSelect").value;
+        const email = idx !== "" ? availableRooms[idx]?.emailAddress : null;
+        if (email && currentLockedEvent) {
+            loadOccupiedAgenda(email, currentLockedEvent.end.dateTime);
+        }
+    }, 60000);
 }
 
 function updateEndsIn(endDate) {
@@ -537,12 +549,20 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
             body: JSON.stringify({ room_email: roomEmail, start_time: windowStart.toISOString(), end_time: windowEnd.toISOString(), time_zone: "UTC" })
         });
         const data     = await res.json();
-        // Filter to only events that start strictly after the current meeting ends
+        // Show events that end after the current meeting ends,
+        // but exclude the current event itself (matched by time overlap with windowStart).
         const upcoming = (data?.value?.[0]?.scheduleItems || []).filter(i => {
             if (i.status !== "busy") return false;
+            const itemEnd   = new Date(i.end.dateTime   + "Z");
             const itemStart = new Date(i.start.dateTime + "Z");
-            // Exclude any event that starts before or at windowStart (= current meeting end)
-            return itemStart >= windowStart;
+            // Must end after the current meeting ends (excludes the current meeting itself)
+            if (itemEnd <= windowStart) return false;
+            // Exclude the current locked event by matching its exact start time
+            if (currentLockedEvent) {
+                const curStart = new Date(currentLockedEvent.start.dateTime + "Z");
+                if (Math.abs(itemStart - curStart) < 60000) return false;
+            }
+            return true;
         });
         if (upcoming.length === 0) { list.innerHTML = `<div class="occ-agenda-empty">No more meetings today.</div>`; return; }
         // ── FIX-03: escapeHtml on item.subject (XSS fix — VULN-03, lines 546-553) ──
