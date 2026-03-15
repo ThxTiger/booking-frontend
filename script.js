@@ -537,7 +537,13 @@ async function loadOccupiedAgenda(roomEmail, currentMeetingEndStr) {
             body: JSON.stringify({ room_email: roomEmail, start_time: windowStart.toISOString(), end_time: windowEnd.toISOString(), time_zone: "UTC" })
         });
         const data     = await res.json();
-        const upcoming = (data?.value?.[0]?.scheduleItems || []).filter(i => i.status === "busy");
+        // Filter to only events that start strictly after the current meeting ends
+        const upcoming = (data?.value?.[0]?.scheduleItems || []).filter(i => {
+            if (i.status !== "busy") return false;
+            const itemStart = new Date(i.start.dateTime + "Z");
+            // Exclude any event that starts before or at windowStart (= current meeting end)
+            return itemStart >= windowStart;
+        });
         if (upcoming.length === 0) { list.innerHTML = `<div class="occ-agenda-empty">No more meetings today.</div>`; return; }
         // ── FIX-03: escapeHtml on item.subject (XSS fix — VULN-03, lines 546-553) ──
         list.innerHTML = upcoming.map(item => {
@@ -641,7 +647,9 @@ async function processSecureEnd(userEmail, allowedList, roomEmail, eventId) {
             stopCountdowns();
             showOccupied(false); setAppState("available"); showView("viewAvailable");
             loadAvailability(roomEmail);
-            showToast("✅ Meeting ended successfully.");
+            showToast("✅ Meeting ended. Signing out…");
+            // Security: sign out immediately so no one can book under the previous user's identity
+            setTimeout(() => signOut(), 1500);
         } else {
             const err = await res.json().catch(() => ({}));
             showToast(err.detail || "Failed to end meeting.", true);
